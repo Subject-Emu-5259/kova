@@ -50,6 +50,13 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # The tauri CLI is a devDependency — it only exists after install.
+      # Without this step `npm run tauri build` fails with exit 127
+      # (command not found), which killed the first two v1.1.1 runs.
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm install
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
