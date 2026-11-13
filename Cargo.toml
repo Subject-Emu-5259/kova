@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["crates/kova-core", "app/src-tauri"]
+# Plain `cargo test` / `cargo build` at the root only touches kova-core.
+# The Tauri app (app/src-tauri) additionally needs desktop GUI system
+# libraries (webkit2gtk on Linux) — see README.md. Build it explicitly:
+#   cargo build -p kova-app
+default-members = ["crates/kova-core"]

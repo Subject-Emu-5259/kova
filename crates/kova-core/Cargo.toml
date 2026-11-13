@@ -1,0 +1,21 @@
+[package]
+name = "kova-core"
+version = "1.1.0"
+edition = "2021"
+description = "KOVA core library by Avok Interactive: unified Steam/Epic/GOG/itch/standalone library scanner plus the built-in Avok shelf (pure Rust, no GUI dependencies)."
+license = "MIT"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Gzip for itch receipts — pure-Rust backend (miniz_oxide), no C deps.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
+[dev-dependencies]
+# Integration tests gzip the plain-text itch receipt fixtures.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
+[[bin]]
+name = "kova-scan"
+path = "src/bin/kova-scan.rs"

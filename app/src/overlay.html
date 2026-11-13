@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KOVA — Quick Panel</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="overlay.css" />
+    <script src="logo-asset.js" defer></script>
+    <script src="nav.js" defer></script>
+    <script src="overlay.js" defer></script>
+  </head>
+  <body class="overlay-body">
+    <div class="panel">
+      <header class="panel-header" data-tauri-drag-region>
+        <div class="brand">
+          <img class="brand-logo" alt="Avok Interactive logo" />
+          <span class="brand-mark">KOVA</span>
+          <span class="brand-by">Quick Panel</span>
+        </div>
+        <div class="panel-actions">
+          <button id="refresh" type="button">Rescan</button>
+          <button id="back" type="button">Back to KOVA</button>
+        </div>
+      </header>
+
+      <section id="recents" class="recents" hidden>
+        <h3 class="recents-title">Quick Resume</h3>
+        <div id="recents-list" class="recents-list"></div>
+      </section>
+
+      <section id="status" class="status">Loading your library…</section>
+      <section id="list" class="game-list" aria-live="polite"></section>
+
+      <footer class="panel-footer">
+        <span><span id="hotkey-hint">Cmd/Ctrl+Shift+K</span> toggles this panel · Esc closes</span>
+        <span>AVOK &#8596; KOVA</span>
+      </footer>
+    </div>
+  </body>
+</html>

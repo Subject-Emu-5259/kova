@@ -1,0 +1,66 @@
+# KOVA release workflow — builds the signed Mac + Windows artifacts on every
+# version tag (v1.1.1, v1.1.2, ...) and attaches them to a GitHub Release,
+# including the updater manifest (latest.json).
+#
+# Signing: the updater artifacts are only verifiable if the release was
+# signed. Dre adds two repository secrets (Settings → Secrets → Actions)
+# before the first signed release:
+#   TAURI_SIGNING_PRIVATE_KEY            (contents of ~/.tauri/kova.key)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD   (the password set at key generation)
+# Without them the build still runs, but the artifacts carry no signature
+# and the in-app updater will refuse them. The private key never lives in
+# this repo.
+#
+# Feed: the in-app updater reads https://kova-99837.wasmer.app/updates/kova/latest.json
+# on the KOVA site (Wasmer static hosting), NOT the GitHub Release. After a
+# release lands here, latest.json + the .app.tar.gz (+ .sig) are published
+# to the site's /updates/kova/ dir. That step is manual while the Wasmer CLI
+# backend is down (dashboard upload); automate it when the CLI recovers.
+#
+# Known limit: DMG icon sizes/positions are NOT applied on CI runners
+# (tauri-apps/tauri#1731) — the Actions-built DMG carries the branded
+# background but default icon placement. Dre's Mac builds carry the full
+# layout. The updater .app.tar.gz is unaffected.
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --target aarch64-apple-darwin
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: 'KOVA ${{ github.ref_name }}'
+          releaseBody: 'See the release notes below.'
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}

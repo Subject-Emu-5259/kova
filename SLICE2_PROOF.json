@@ -1,0 +1,162 @@
+{
+  "sources": [
+    {
+      "source": "steam",
+      "roots": [
+        "/home/hatch/workspace/kova/v1/target/slice2-fixture/steam",
+        "/home/hatch/workspace/kova/v1/target/slice2-fixture/library-b"
+      ],
+      "games": [
+        {
+          "source": "steam",
+          "id": "730",
+          "appid": 730,
+          "name": "Counter-Strike 2",
+          "installdir": "Counter-Strike Global Offensive",
+          "install_path": "/home/hatch/workspace/kova/v1/target/slice2-fixture/steam/steamapps/common/Counter-Strike Global Offensive",
+          "size_on_disk": 67882246144,
+          "last_updated": 1729000000,
+          "library": "/home/hatch/workspace/kova/v1/target/slice2-fixture/steam",
+          "launch_uri": "steam://rungameid/730"
+        },
+        {
+          "source": "steam",
+          "id": "570",
+          "appid": 570,
+          "name": "Dota 2",
+          "installdir": "dota 2 beta",
+          "install_path": "/home/hatch/workspace/kova/v1/target/slice2-fixture/steam/steamapps/common/dota 2 beta",
+          "size_on_disk": 54210928640,
+          "last_updated": 1728000000,
+          "library": "/home/hatch/workspace/kova/v1/target/slice2-fixture/steam",
+          "launch_uri": "steam://rungameid/570"
+        },
+        {
+          "source": "steam",
+          "id": "252950",
+          "appid": 252950,
+          "name": "Rocket League",
+          "installdir": "rocketleague",
+          "install_path": "/home/hatch/workspace/kova/v1/target/slice2-fixture/library-b/steamapps/common/rocketleague",
+          "size_on_disk": 27917287424,
+          "last_updated": 1726000000,
+          "library": "/home/hatch/workspace/kova/v1/target/slice2-fixture/library-b",
+          "launch_uri": "steam://rungameid/252950"
+        },
+        {
+          "source": "steam",
+          "id": "440",
+          "appid": 440,
+          "name": "Team Fortress 2",
+          "installdir": "Team Fortress 2",
+          "install_path": "/home/hatch/workspace/kova/v1/target/slice2-fixture/library-b/steamapps/common/Team Fortress 2",
+          "size_on_disk": 25710931968,
+          "last_updated": 1727000000,
+          "library": "/home/hatch/workspace/kova/v1/target/slice2-fixture/library-b",
+          "launch_uri": "steam://rungameid/440"
+        }
+      ],
+      "skipped": 2
+    },
+    {
+      "source": "epic",
+      "roots": [
+        "/home/hatch/workspace/kova/v1/target/slice2-fixture/epic-manifests"
+      ],
+      "games": [
+        {
+          "source": "epic",
+          "id": "NeonHarbor",
+          "appid": 0,
+          "name": "Neon Harbor",
+          "installdir": "NeonHarbor",
+          "install_path": "D:\\EpicGames\\NeonHarbor",
+          "size_on_disk": 0,
+          "last_updated": 0,
+          "library": "/home/hatch/workspace/kova/v1/target/slice2-fixture/epic-manifests",
+          "launch_uri": "com.epicgames.launcher://apps/NeonHarbor?action=launch&silent=true"
+        },
+        {
+          "source": "epic",
+          "id": "StarfallDrift",
+          "appid": 0,
+          "name": "Starfall Drift",
+          "installdir": "StarfallDrift",
+          "install_path": "D:\\EpicGames\\StarfallDrift",
+          "size_on_disk": 21474836480,
+          "last_updated": 0,
+          "library": "/home/hatch/workspace/kova/v1/target/slice2-fixture/epic-manifests",
+          "launch_uri": "com.epicgames.launcher://apps/StarfallDrift?action=launch&silent=true"
+        }
+      ],
+      "skipped": 1
+    },
+    {
+      "source": "gog",
+      "roots": [
+        "/home/hatch/workspace/kova/v1/target/slice2-fixture/gog-games"
+      ],
+      "games": [
+        {
+          "source": "gog",
+          "id": "1987654321",
+          "appid": 1987654321,
+          "name": "Neon Harbor",
+          "installdir": "NeonHarborGame",
+          "install_path": "/home/hatch/workspace/kova/v1/target/slice2-fixture/gog-games/Collection/NeonHarborGame",
+          "size_on_disk": 0,
+          "last_updated": 0,
+          "library": "/home/hatch/workspace/kova/v1/target/slice2-fixture/gog-games",
+          "launch_uri": "goggalaxy://openGameView/1987654321"
+        },
+        {
+          "source": "gog",
+          "id": "1452360789",
+          "appid": 1452360789,
+          "name": "Starfall Drift",
+          "installdir": "Starfall Drift",
+          "install_path": "/home/hatch/workspace/kova/v1/target/slice2-fixture/gog-games/Starfall Drift",
+          "size_on_disk": 0,
+          "last_updated": 0,
+          "library": "/home/hatch/workspace/kova/v1/target/slice2-fixture/gog-games",
+          "launch_uri": "goggalaxy://openGameView/1452360789"
+        }
+      ],
+      "skipped": 1
+    },
+    {
+      "source": "itch",
+      "roots": [
+        "/home/hatch/workspace/kova/v1/target/slice2-fixture/itch-apps"
+      ],
+      "games": [
+        {
+          "source": "itch",
+          "id": "2450002",
+          "appid": 2450002,
+          "name": "Neon Harbor",
+          "installdir": "neon-harbor",
+          "install_path": "/home/hatch/workspace/kova/v1/target/slice2-fixture/itch-apps/neon-harbor",
+          "size_on_disk": 0,
+          "last_updated": 0,
+          "library": "/home/hatch/workspace/kova/v1/target/slice2-fixture/itch-apps",
+          "launch_uri": "/home/hatch/workspace/kova/v1/target/slice2-fixture/itch-apps/neon-harbor"
+        },
+        {
+          "source": "itch",
+          "id": "2450001",
+          "appid": 2450001,
+          "name": "Starfall Drift",
+          "installdir": "starfall-drift",
+          "install_path": "/home/hatch/workspace/kova/v1/target/slice2-fixture/itch-apps/starfall-drift",
+          "size_on_disk": 0,
+          "last_updated": 0,
+          "library": "/home/hatch/workspace/kova/v1/target/slice2-fixture/itch-apps",
+          "launch_uri": "/home/hatch/workspace/kova/v1/target/slice2-fixture/itch-apps/starfall-drift"
+        }
+      ],
+      "skipped": 1
+    }
+  ],
+  "total_games": 10
+}

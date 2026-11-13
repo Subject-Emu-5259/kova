@@ -1,0 +1,1 @@
+KOVA test fixture — this executable sits at depth 4 below the scan root, past the scanner's depth bound of 3, and must NOT be found.

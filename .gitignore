@@ -1,0 +1,18 @@
+target/
+demo-steam/
+
+# Frontend dependencies (reinstalled with `npm install`)
+app/node_modules/
+
+# Signing keys — NEVER committed. The updater private key lives on Dre's
+# Mac (~/.tauri/kova.key) and in the repo's GitHub Actions secrets only.
+*.key
+*.pem
+
+# Local env + logs + OS junk
+.env
+*.log
+.DS_Store
+
+# DMG preview render (build_dmg_background.py regenerates it)
+dmg/dmg-preview.png

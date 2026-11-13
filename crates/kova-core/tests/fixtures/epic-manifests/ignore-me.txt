@@ -1,0 +1,2 @@
+Not an Epic manifest — the *.item scanner must ignore this file
+(it is neither parsed nor counted as skipped).

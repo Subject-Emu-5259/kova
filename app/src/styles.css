@@ -1,0 +1,821 @@
+/* KOVA V1 — main window styles.
+   Identity: Avok cyan on the logo's near-black (rebrand 2026-10-23).
+   Palette sampled from the Avok Interactive mark: body cyan #00D8F0,
+   highlight #2CE0F2, shadow cyan #039BBD, ground #0B0D0F. (V0–V1.4
+   used molten amber #FF7A1A on graphite.)
+   Shared with the overlay window (which adds overlay.css on top). */
+
+:root {
+  --graphite: #0b0d0f;
+  --panel: #121417;
+  --panel-2: #17191d;
+  --panel-3: #23272e;
+  --border: #262a30;
+  --accent: #00d8f0;
+  --accent-dim: #039bbd;
+  --text: #f5f5f4;
+  --muted: #a7abb3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--graphite);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+/* ------------------------------------------------------------ top bar */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.5rem;
+  background: var(--panel);
+  border-bottom: 3px solid var(--accent);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+}
+
+/* The Avok mark (src set by logo-asset.js from an embedded data URI).
+   The art is a full-bleed square on near-black, so it reads as an
+   app-icon chip next to the KOVA wordmark. */
+.brand-logo {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 8px;
+  margin-right: 0.65rem;
+  flex-shrink: 0;
+}
+
+.brand-mark {
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: var(--accent);
+}
+
+.brand-by {
+  margin-left: 0.75rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.tab {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-weight: 600;
+  padding: 0.55rem 1.15rem;
+}
+
+.tab:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #03181d;
+}
+
+/* ------------------------------------------------------------- status */
+
+.status-bar {
+  padding: 0.7rem 1.5rem;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.98rem;
+}
+
+.status-bar.error {
+  color: #ff6b5e;
+}
+
+/* Kept for the overlay (its own .status element lives in the panel). */
+.status {
+  font-size: 1.1rem;
+  color: var(--muted);
+  padding: 1rem 0;
+}
+
+.status.error {
+  color: #ff6b5e;
+}
+
+/* ------------------------------------------------------------ buttons */
+
+button {
+  padding: 0.6rem 1.1rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #03181d;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+button:hover {
+  background: #2ce0f2;
+}
+
+button:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+button:disabled {
+  background: var(--accent-dim);
+  cursor: wait;
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+button.ghost:hover {
+  background: var(--panel-3);
+}
+
+/* -------------------------------------------------------------- views */
+
+main {
+  padding: 1.5rem;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+.view[hidden] {
+  display: none;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  margin: 1.6rem 0 0.8rem;
+}
+
+.section-head h2 {
+  margin: 0;
+  font-size: 1.45rem;
+  letter-spacing: 0.02em;
+}
+
+.section-sub {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.empty-note {
+  color: var(--muted);
+  font-size: 0.98rem;
+  padding: 0.6rem 0;
+}
+
+/* --------------------------------------------------------------- hero */
+
+.hero {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  min-height: 250px;
+  border-radius: 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 160% at 85% 10%, rgba(0, 216, 240, 0.35), transparent 55%),
+    linear-gradient(120deg, #1d2026 20%, #121317 70%);
+  border: 1px solid var(--border);
+}
+
+.hero-copy {
+  padding: 2rem 2.2rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.7rem;
+}
+
+.hero-eyebrow {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+}
+
+.hero-title {
+  margin: 0;
+  font-size: 2.9rem;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+}
+
+.hero-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.05rem;
+  max-width: 46ch;
+}
+
+.hero-play {
+  align-self: flex-start;
+  margin-top: 0.5rem;
+  padding: 0.75rem 1.6rem;
+  font-size: 1.02rem;
+  border-radius: 10px;
+}
+
+.hero-art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(90% 90% at 50% 40%, rgba(0, 216, 240, 0.5), transparent 70%),
+    linear-gradient(160deg, #00d8f0, #0d495d);
+}
+
+/* Slice 5.2: the featured Avok title's own art over the hero
+   gradient; the monogram underneath is the missing-file fallback. */
+.hero-game-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 8%;
+}
+
+.hero-mono {
+  font-size: 6.2rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+}
+
+/* ------------------------------------------------------- shelves/rows */
+
+.strip-row {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding: 0.4rem 0.2rem 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-3) transparent;
+}
+
+.shelf {
+  margin-bottom: 0.6rem;
+}
+
+.shelf-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  margin: 0.9rem 0 0.3rem;
+}
+
+.shelf-title {
+  margin: 0;
+  font-size: 1.18rem;
+}
+
+.shelf-count {
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+/* --------------------------------------------------------------- tiles */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1.1rem;
+}
+
+.tile {
+  background: var(--panel-2);
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.tile:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent-dim);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+}
+
+.tile:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tile-mini {
+  flex: 0 0 168px;
+}
+
+.tile-body {
+  padding: 0.85rem 0.95rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  flex: 1;
+}
+
+.tile-title {
+  margin: 0;
+  font-size: 1.08rem;
+  line-height: 1.25;
+}
+
+.tile .meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.tile .play {
+  margin-top: auto;
+  align-self: flex-start;
+  padding: 0.5rem 1.05rem;
+}
+
+/* ---------------------------------------------------------------- art */
+
+.art {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  max-height: 300px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: linear-gradient(160deg, var(--panel-3), var(--panel));
+}
+
+.art-wide {
+  aspect-ratio: 21 / 9;
+  max-height: 340px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+}
+
+.art-steam { background: linear-gradient(160deg, #2a475e, #1b2838); }
+.art-epic { background: linear-gradient(160deg, #40404e, #17171d); }
+.art-gog { background: linear-gradient(160deg, #5b2a86, #27103f); }
+.art-itch { background: linear-gradient(160deg, #fa5c5c, #93303e); }
+.art-standalone { background: linear-gradient(160deg, #1f6f5c, #0d2f28); }
+.art-avok { background: linear-gradient(160deg, #00d8f0, #0d495d); }
+
+.art-initial {
+  font-size: 4.4rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 8px 26px rgba(0, 0, 0, 0.5);
+  user-select: none;
+}
+
+.art-wide .art-initial {
+  font-size: 6rem;
+}
+
+.art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A real .app icon is square art, not a cover photo: contain it
+   over the generated gradient instead of cropping it. */
+.art img.local-icon {
+  z-index: 1;
+  object-fit: contain;
+  padding: 13%;
+}
+
+.art-wide img.local-icon {
+  padding: 3%;
+}
+
+/* Slice 5.2: an Avok title's own art file — same treatment as a
+   real .app icon (contained, padded, above the monogram), but it
+   replaces the bundle-icon layer, which for Avok builds is the
+   studio mark. The source tag (z-index 2) stays on top. */
+.art img.game-art-img {
+  z-index: 1;
+  object-fit: contain;
+  padding: 13%;
+}
+
+.art-wide img.game-art-img {
+  padding: 3%;
+}
+
+.art .tag {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  z-index: 2;
+  background: rgba(10, 10, 12, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.tag {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent-dim);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+}
+
+.installed-badge {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #03181d;
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+}
+
+.hero-installed {
+  align-self: flex-start;
+}
+
+/* -------------------------------------------------- summary + filters */
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 2rem;
+  padding: 0.9rem 1.1rem;
+  background: var(--panel);
+  border-radius: 10px;
+  margin-bottom: 1.25rem;
+  font-size: 1rem;
+}
+
+.summary strong {
+  color: var(--accent);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.chip {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid #33363d;
+  font-weight: 600;
+}
+
+.chip:hover {
+  background: var(--panel-3);
+}
+
+.chip.active {
+  background: var(--accent);
+  color: #03181d;
+  border-color: var(--accent);
+}
+
+/* -------------------------------------------------------------- detail */
+
+#detail-back {
+  margin-bottom: 1.1rem;
+}
+
+.detail-body {
+  padding: 1.4rem 0.2rem;
+}
+
+.detail-title {
+  margin: 0 0 1rem;
+  font-size: 2.3rem;
+  line-height: 1.1;
+}
+
+.detail-meta {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 0.55rem 1.4rem;
+  margin: 0 0 1.5rem;
+  max-width: 900px;
+}
+
+.detail-meta dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.detail-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.detail-play {
+  padding: 0.75rem 1.8rem;
+  font-size: 1.02rem;
+  border-radius: 10px;
+}
+
+/* ------------------------------------------------------------ settings */
+
+.settings-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.3rem 1.5rem;
+  margin-bottom: 1.2rem;
+  max-width: 900px;
+}
+
+.settings-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.3rem;
+}
+
+.settings-note {
+  color: var(--muted);
+  margin: 0 0 1rem;
+  line-height: 1.5;
+}
+
+.settings-note strong {
+  color: var(--text);
+}
+
+.settings-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.text-input {
+  flex: 1;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #33363d;
+  background: var(--graphite);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.text-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.9rem;
+}
+
+.folder-path {
+  overflow-wrap: anywhere;
+  font-size: 0.95rem;
+}
+
+.folder-remove {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.88rem;
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------- slice 5: profiles --- */
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.fav-badge {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(0, 216, 240, 0.1);
+  border: 1px solid var(--accent-dim);
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+}
+
+/* A profile art override covers the default art; the real local
+   bundle icon (also z-index 1, inserted later) still wins. */
+.art img.art-override {
+  z-index: 1;
+}
+
+.library-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.library-search {
+  max-width: 420px;
+}
+
+.sort-label {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.sort-select {
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #33363d;
+  background: var(--graphite);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.sort-select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.profile-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.3rem 1.5rem;
+  margin-top: 1.6rem;
+  max-width: 900px;
+}
+
+.profile-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.3rem;
+}
+
+.profile-stats {
+  color: var(--accent);
+  font-weight: 600;
+  margin: 0 0 1.1rem;
+}
+
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.95rem;
+}
+
+.profile-field label {
+  font-weight: 600;
+}
+
+.profile-field .text-input {
+  max-width: 560px;
+}
+
+.text-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.profile-note {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 1.1rem;
+}
+
+button.toggle-btn.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #03181d;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  cursor: pointer;
+}
+
+.toggle-row input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--accent);
+}
+
+.hidden-key {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ------------------------------------------- slice 6: nav ring --- */
+
+/* Gamepad/keyboard navigation focus, shared by both windows
+   (overlay.css loads after this file). Stronger than
+   :focus-visible on purpose: programmatic focus does not
+   reliably match :focus-visible, and a console UI must read at
+   TV distance. The class is applied only while navigating
+   (nav.js) — mouse use never shows it. Avok cyan #00D8F0. */
+.kova-nav-focus {
+  outline: 3px solid #00d8f0 !important;
+  outline-offset: 2px;
+}
+
+.tile.kova-nav-focus {
+  border-color: #00d8f0;
+  box-shadow: 0 0 0 3px rgba(0, 216, 240, 0.35), 0 14px 30px rgba(0, 0, 0, 0.45);
+  transform: translateY(-2px);
+}
+
+.game-row.kova-nav-focus,
+.recent-card.kova-nav-focus {
+  border-color: #00d8f0;
+}
+
+/* -------------------------------------------------------------- footer */
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  border-top: 1px solid #26282e;
+}
+
+/* Update badge — the cyan dot on the Settings tab when a KOVA update
+   is waiting in the Updates card (v1.1.0 OTA). */
+.update-badge {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}

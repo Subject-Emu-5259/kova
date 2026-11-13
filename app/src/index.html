@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KOVA — Avok Interactive</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="logo-asset.js" defer></script>
+    <script src="nav.js" defer></script>
+    <script src="main.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img class="brand-logo" alt="Avok Interactive logo" />
+        <span class="brand-mark">KOVA</span>
+        <span class="brand-by">by Avok Interactive</span>
+      </div>
+      <nav class="tabs" aria-label="KOVA views">
+        <button class="tab active" type="button" data-view="home">Home</button>
+        <button class="tab" type="button" data-view="library">Library</button>
+        <button class="tab" type="button" data-view="settings">Settings<span id="update-badge" class="update-badge" hidden></span></button>
+      </nav>
+    </header>
+
+    <div id="status" class="status-bar" hidden></div>
+
+    <main>
+      <!-- ===================== HOME ===================== -->
+      <section id="view-home" class="view">
+        <div id="hero"></div>
+
+        <div class="section-head">
+          <h2>Quick Resume</h2>
+          <span class="section-sub">Recently launched from KOVA</span>
+        </div>
+        <div id="quick-resume" class="strip-row"></div>
+
+        <div id="favorites-section" hidden>
+          <div class="section-head">
+            <h2>Favorites</h2>
+            <span class="section-sub">Starred on a game's page</span>
+          </div>
+          <div id="favorites" class="strip-row"></div>
+        </div>
+
+        <div class="section-head">
+          <h2>Your Shelves</h2>
+          <span class="section-sub">Every store, one library</span>
+        </div>
+        <div id="shelves"></div>
+      </section>
+
+      <!-- ===================== LIBRARY ===================== -->
+      <section id="view-library" class="view" hidden>
+        <section id="summary" class="summary" hidden></section>
+        <div class="library-controls">
+          <input
+            id="library-search"
+            class="text-input library-search"
+            type="search"
+            placeholder="Search your library…"
+            spellcheck="false"
+          />
+          <label class="sort-label" for="library-sort">Sort</label>
+          <select id="library-sort" class="sort-select">
+            <option value="name">Name</option>
+            <option value="recent">Recently played</option>
+            <option value="played">Most played</option>
+            <option value="source">Source</option>
+          </select>
+        </div>
+        <nav id="filters" class="filters" aria-label="Filter by source" hidden></nav>
+        <section id="grid" class="grid" aria-live="polite"></section>
+        <p id="grid-empty" class="empty-note" hidden></p>
+      </section>
+
+      <!-- ===================== GAME DETAIL ===================== -->
+      <section id="view-detail" class="view" hidden>
+        <button id="detail-back" class="ghost" type="button">&#8592; Back to Library</button>
+        <div id="detail"></div>
+      </section>
+
+      <!-- ===================== SETTINGS ===================== -->
+      <section id="view-settings" class="view" hidden>
+        <div class="settings-card">
+          <h2>Updates</h2>
+          <p class="settings-note">
+            KOVA checks for updates when it launches and every 6 hours.
+            Nothing installs without your go — an available update shows
+            here first.
+          </p>
+          <p id="update-status" class="settings-note">Checking for updates…</p>
+          <p id="update-notes" class="settings-note" hidden></p>
+          <div class="settings-row">
+            <button id="update-check" type="button">Check for Updates</button>
+            <button id="update-install" type="button" hidden>Install Update</button>
+            <button id="update-restart" type="button" hidden>Restart to Finish</button>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h2>Steam Library</h2>
+          <p class="settings-note">
+            Leave the root blank and KOVA auto-detects your Steam install.
+          </p>
+          <div class="settings-row">
+            <input
+              id="steam-path"
+              class="text-input"
+              type="text"
+              placeholder="Steam root (optional — defaults are auto-detected)"
+              spellcheck="false"
+            />
+            <button id="rescan" type="button">Scan Library</button>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h2>Standalone Game Folders</h2>
+          <p class="settings-note">
+            Folders KOVA scans for games that didn't come from a store —
+            .app bundles, .exe files, AppImages, Linux binaries. When this
+            list is empty, KOVA checks <strong>~/Games</strong> and
+            <strong>~/KOVA Games</strong> instead.
+          </p>
+          <div id="folder-list" class="folder-list"></div>
+          <div class="settings-row">
+            <input
+              id="folder-input"
+              class="text-input"
+              type="text"
+              placeholder="Add a folder path, e.g. /Users/you/Games"
+              spellcheck="false"
+            />
+            <button id="folder-add" type="button">Add Folder</button>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h2>Library Visibility</h2>
+          <p class="settings-note">
+            Games you hide (from their game page) disappear from Home,
+            the Library, and the Quick Panel. Hiding is always
+            reversible — hidden games are listed here with an Unhide
+            button.
+          </p>
+          <label class="toggle-row" for="show-hidden-toggle">
+            <input id="show-hidden-toggle" type="checkbox" />
+            Show hidden games in the Library
+          </label>
+          <div id="hidden-list" class="folder-list"></div>
+        </div>
+
+        <div class="settings-card">
+          <h2>Quick Panel</h2>
+          <p class="settings-note">
+            Press <strong id="hotkey-hint">⌘+Shift+K</strong> anywhere to
+            summon the KOVA Quick Panel — your library and Quick Resume,
+            floating over the desktop. Esc closes it.
+          </p>
+        </div>
+
+        <div class="settings-card">
+          <h2>About</h2>
+          <p class="settings-note">
+            KOVA by Avok Interactive · Version 1.1.0<br />
+            All your games. One system.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>KOVA V1 — unified library + Quick Panel</span>
+      <span>AVOK &#8596; KOVA</span>
+    </footer>
+  </body>
+</html>

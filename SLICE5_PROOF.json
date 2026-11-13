@@ -1,0 +1,249 @@
+{
+  "annotated": [
+    {
+      "art_url_override": null,
+      "display_name": "CS2 Renamed",
+      "favorite": true,
+      "hidden": false,
+      "key": "steam:730",
+      "last_launched": 1730000000,
+      "launch_count": 3,
+      "name": "Counter-Strike 2",
+      "source": "steam"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Dota 2",
+      "favorite": false,
+      "hidden": true,
+      "key": "steam:570",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Dota 2",
+      "source": "steam"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Rocket League",
+      "favorite": false,
+      "hidden": false,
+      "key": "steam:252950",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Rocket League",
+      "source": "steam"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Team Fortress 2",
+      "favorite": false,
+      "hidden": false,
+      "key": "steam:440",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Team Fortress 2",
+      "source": "steam"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Neon Harbor",
+      "favorite": false,
+      "hidden": false,
+      "key": "epic:NeonHarbor",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Neon Harbor",
+      "source": "epic"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Starfall Drift",
+      "favorite": false,
+      "hidden": false,
+      "key": "epic:StarfallDrift",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Starfall Drift",
+      "source": "epic"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Neon Harbor",
+      "favorite": false,
+      "hidden": false,
+      "key": "gog:1987654321",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Neon Harbor",
+      "source": "gog"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Starfall Drift",
+      "favorite": false,
+      "hidden": false,
+      "key": "gog:1452360789",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Starfall Drift",
+      "source": "gog"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Neon Harbor",
+      "favorite": false,
+      "hidden": false,
+      "key": "itch:2450002",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Neon Harbor",
+      "source": "itch"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Starfall Drift",
+      "favorite": false,
+      "hidden": false,
+      "key": "itch:2450001",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Starfall Drift",
+      "source": "itch"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Moon Kart",
+      "favorite": true,
+      "hidden": false,
+      "key": "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Moon Kart.app",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Moon Kart",
+      "source": "standalone"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Neon Harbor",
+      "favorite": false,
+      "hidden": false,
+      "key": "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Neon Harbor.exe",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Neon Harbor",
+      "source": "standalone"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Pixel Racer",
+      "favorite": false,
+      "hidden": false,
+      "key": "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Collection/Pixel Racer.AppImage",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Pixel Racer",
+      "source": "standalone"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "Starfall Drift",
+      "favorite": false,
+      "hidden": false,
+      "key": "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Starfall Drift.app",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Starfall Drift",
+      "source": "standalone"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "void-runner",
+      "favorite": false,
+      "hidden": false,
+      "key": "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/void-runner",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "void-runner",
+      "source": "standalone"
+    },
+    {
+      "art_url_override": "https://example.invalid/dispatch-hq-art.png",
+      "display_name": "Dispatch HQ",
+      "favorite": false,
+      "hidden": false,
+      "key": "avok:dispatch-hq",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "Dispatch HQ",
+      "source": "avok"
+    },
+    {
+      "art_url_override": null,
+      "display_name": "The Open World",
+      "favorite": false,
+      "hidden": false,
+      "key": "avok:the-open-world",
+      "last_launched": null,
+      "launch_count": 0,
+      "name": "The Open World",
+      "source": "avok"
+    }
+  ],
+  "favorites_first_keys": [
+    "steam:730",
+    "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Moon Kart.app",
+    "avok:dispatch-hq",
+    "epic:NeonHarbor",
+    "gog:1987654321",
+    "itch:2450002",
+    "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Neon Harbor.exe",
+    "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Collection/Pixel Racer.AppImage",
+    "steam:252950",
+    "epic:StarfallDrift",
+    "gog:1452360789",
+    "itch:2450001",
+    "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Starfall Drift.app",
+    "steam:440",
+    "avok:the-open-world",
+    "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/void-runner"
+  ],
+  "launch_update": {
+    "after_count": 1,
+    "after_last_launched": 1730003600,
+    "before_count": 0,
+    "before_last_launched": null
+  },
+  "profile_fold": {
+    "count_after": 2,
+    "dst_count_before": 1,
+    "favorite_after": true,
+    "last_launched_after": 1730003600,
+    "old_key_present": false,
+    "src_count": 1
+  },
+  "recent_resolution": {
+    "resolved_id": "dispatch-hq",
+    "resolved_key": "avok:dispatch-hq",
+    "resolved_source": "avok",
+    "snapshot_key": "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Dispatch HQ.app"
+  },
+  "total_games": 17,
+  "visible_count": 16,
+  "visible_keys": [
+    "steam:730",
+    "steam:252950",
+    "steam:440",
+    "epic:NeonHarbor",
+    "epic:StarfallDrift",
+    "gog:1987654321",
+    "gog:1452360789",
+    "itch:2450002",
+    "itch:2450001",
+    "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Moon Kart.app",
+    "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Neon Harbor.exe",
+    "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Collection/Pixel Racer.AppImage",
+    "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/Starfall Drift.app",
+    "standalone:/home/hatch/workspace/kova/v1/target/slice4-fixture/standalone-games/void-runner",
+    "avok:dispatch-hq",
+    "avok:the-open-world"
+  ]
+}

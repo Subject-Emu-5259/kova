@@ -1,0 +1,50 @@
+{
+  "steam_root": "/home/hatch/workspace/kova/v1/demo-steam/steam",
+  "libraries": [
+    "/home/hatch/workspace/kova/v1/demo-steam/steam",
+    "/home/hatch/workspace/kova/v1/demo-steam/library-b"
+  ],
+  "games": [
+    {
+      "appid": 730,
+      "name": "Counter-Strike 2",
+      "installdir": "Counter-Strike Global Offensive",
+      "install_path": "/home/hatch/workspace/kova/v1/demo-steam/steam/steamapps/common/Counter-Strike Global Offensive",
+      "size_on_disk": 67882246144,
+      "last_updated": 1729000000,
+      "library": "/home/hatch/workspace/kova/v1/demo-steam/steam",
+      "launch_uri": "steam://rungameid/730"
+    },
+    {
+      "appid": 570,
+      "name": "Dota 2",
+      "installdir": "dota 2 beta",
+      "install_path": "/home/hatch/workspace/kova/v1/demo-steam/steam/steamapps/common/dota 2 beta",
+      "size_on_disk": 54210928640,
+      "last_updated": 1728000000,
+      "library": "/home/hatch/workspace/kova/v1/demo-steam/steam",
+      "launch_uri": "steam://rungameid/730"
+    },
+    {
+      "appid": 252950,
+      "name": "Rocket League",
+      "installdir": "rocketleague",
+      "install_path": "/home/hatch/workspace/kova/v1/demo-steam/library-b/steamapps/common/rocketleague",
+      "size_on_disk": 27917287424,
+      "last_updated": 1726000000,
+      "library": "/home/hatch/workspace/kova/v1/demo-steam/library-b",
+      "launch_uri": "steam://rungameid/252950"
+    },
+    {
+      "appid": 440,
+      "name": "Team Fortress 2",
+      "installdir": "Team Fortress 2",
+      "install_path": "/home/hatch/workspace/kova/v1/demo-steam/library-b/steamapps/common/Team Fortress 2",
+      "size_on_disk": 25710931968,
+      "last_updated": 1727000000,
+      "library": "/home/hatch/workspace/kova/v1/demo-steam/library-b",
+      "launch_uri": "steam://rungameid/440"
+    }
+  ],
+  "skipped_manifests": 2
+}

@@ -1,0 +1,23 @@
+[package]
+name = "kova-app"
+version = "1.1.0"
+edition = "2021"
+description = "KOVA V1 launcher app (Tauri) by Avok Interactive."
+license = "MIT"
+publish = false
+
+[lib]
+name = "kova_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+kova-core = { path = "../../crates/kova-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-updater = "2"

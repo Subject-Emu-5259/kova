@@ -1,0 +1,15 @@
+"AppState"
+{
+	"appid"		"730"
+	"universe"		"1"
+	"name"		"Counter-Strike 2"
+	"StateFlags"		"4"
+	"installdir"		"Counter-Strike Global Offensive"
+	"LastUpdated"		"1729000000"
+	"SizeOnDisk"		"67882246144"
+	"buildid"		"10000001"
+	"UserConfig"
+	{
+		"language"		"english"
+	}
+}
