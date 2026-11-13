@@ -52,6 +52,12 @@
 //!   Settings "show hidden games" flag. State files written
 //!   before slice 5 load with empty profiles — every field is
 //!   serde-defaulted.
+//! * `set_gamer_profile` / `set_wishlist` — the v1.1.1 state: the
+//!   player's gamertag + avatar + bio (local only — KOVA has no
+//!   backend or accounts) and the local Avok wishlist (game keys).
+//!   Both are additive, serde-defaulted fields: state files
+//!   written before v1.1.1 load with an empty profile and an
+//!   empty wishlist.
 //! * `game_icon` — on macOS, extract a locally installed `.app`
 //!   game's icon into the app data dir's `art-cache` (copying
 //!   PNG/JPG resources, converting `.icns` with the system `sips`)
@@ -81,6 +87,27 @@ use tauri_plugin_updater::UpdaterExt;
 /// How many games the Quick Resume list remembers.
 const RECENTS_CAP: usize = 10;
 
+/// The player's gamer profile (v1.1.1) — local only. KOVA has no
+/// backend and no accounts, so this lives in `kova-state.json` on
+/// the player's own machine and nowhere else.
+///
+/// `avatar` is one of: "" (no avatar — the UI shows the gamertag
+/// initial), `"builtin:<id>"` (a built-in option the frontend
+/// draws), or a `data:image/...` URL from a frontend upload
+/// (downscaled by canvas, capped — see `set_gamer_profile`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct GamerProfile {
+    /// Display name. No uniqueness check — a local tag.
+    #[serde(default)]
+    gamertag: String,
+    /// Avatar: "" | "builtin:<id>" | data URL.
+    #[serde(default)]
+    avatar: String,
+    /// One bio line.
+    #[serde(default)]
+    bio: String,
+}
+
 /// KOVA's persistent state (`kova-state.json` in the app data dir).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct KovaState {
@@ -103,6 +130,15 @@ struct KovaState {
     /// Defaults to false — hidden means hidden.
     #[serde(default)]
     show_hidden_games: bool,
+    /// The player's gamer profile (v1.1.1). Absent from state
+    /// files written before v1.1.1 — the default is empty.
+    #[serde(default)]
+    gamer_profile: GamerProfile,
+    /// Local wishlist (v1.1.1): profile keys `"<source>:<id>"` of
+    /// Avok titles the player marked as wanted. Absent from state
+    /// files written before v1.1.1 — the default is empty.
+    #[serde(default)]
+    wishlist: Vec<String>,
 }
 
 fn state_path(app: &tauri::AppHandle) -> Option<PathBuf> {
@@ -294,6 +330,70 @@ fn clear_profile(app: tauri::AppHandle, key: String) -> Result<kova_core::Profil
 fn set_show_hidden_games(app: tauri::AppHandle, show: bool) -> Result<KovaState, String> {
     let mut state = load_state(&app);
     state.show_hidden_games = show;
+    save_state(&app, &state)?;
+    Ok(state)
+}
+
+// ---------------------------------------------------------------------------
+// Gamer profile + wishlist (v1.1.1)
+// ---------------------------------------------------------------------------
+
+/// Limits for the gamer profile, enforced on the way in so the
+/// state file stays small no matter what the frontend sends. The
+/// avatar cap is in characters of the data-URL string: a ~200 KB
+/// image base64-encodes to roughly 273,000 characters, so 300,000
+/// leaves headroom for the `data:image/...;base64,` prefix.
+const GAMERTAG_MAX_CHARS: usize = 32;
+const BIO_MAX_CHARS: usize = 160;
+const AVATAR_MAX_CHARS: usize = 300_000;
+
+/// Truncate a string to at most `max` characters (on char
+/// boundaries — never splits a multi-byte character).
+fn truncate_chars(value: &str, max: usize) -> String {
+    value.chars().take(max).collect()
+}
+
+/// Replace the gamer profile (gamertag, avatar, bio) and return
+/// the updated state. Text is trimmed and capped; an avatar data
+/// URL over the cap is rejected (the frontend downscales uploads
+/// before sending, so this is a backstop, not the normal path).
+#[tauri::command]
+fn set_gamer_profile(
+    app: tauri::AppHandle,
+    profile: GamerProfile,
+) -> Result<KovaState, String> {
+    let gamertag = truncate_chars(profile.gamertag.trim(), GAMERTAG_MAX_CHARS);
+    let bio = truncate_chars(profile.bio.trim(), BIO_MAX_CHARS);
+    let avatar = profile.avatar.trim().to_string();
+    if avatar.len() > AVATAR_MAX_CHARS {
+        return Err("avatar image is too large (over the 200 KB cap)".to_string());
+    }
+    let mut state = load_state(&app);
+    state.gamer_profile = GamerProfile {
+        gamertag,
+        avatar,
+        bio,
+    };
+    save_state(&app, &state)?;
+    Ok(state)
+}
+
+/// Replace the local Avok wishlist (profile keys
+/// `"<source>:<id>"`) and return the updated state. Entries are
+/// trimmed, empties dropped, duplicates removed (first occurrence
+/// wins). Only Avok titles belong on the wishlist — the shelf is
+/// what KOVA showcases — so non-`avok:` keys are dropped.
+#[tauri::command]
+fn set_wishlist(app: tauri::AppHandle, wishlist: Vec<String>) -> Result<KovaState, String> {
+    let mut cleaned: Vec<String> = Vec::new();
+    for key in wishlist {
+        let key = key.trim().to_string();
+        if key.starts_with("avok:") && !cleaned.contains(&key) {
+            cleaned.push(key);
+        }
+    }
+    let mut state = load_state(&app);
+    state.wishlist = cleaned;
     save_state(&app, &state)?;
     Ok(state)
 }
@@ -758,6 +858,8 @@ pub fn run() {
             set_profile,
             clear_profile,
             set_show_hidden_games,
+            set_gamer_profile,
+            set_wishlist,
             game_icon,
             back_to_main,
             hide_overlay,

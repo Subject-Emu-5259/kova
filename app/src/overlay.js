@@ -4,12 +4,13 @@
 //   invoke("launch_game", { gameJson })    -> launch + record stats
 //        and recents; returns the updated state
 //   invoke("get_state")                    -> { recents,
-//        standalone_folders, profiles, show_hidden_games }
+//        standalone_folders, profiles, show_hidden_games,
+//        gamer_profile, wishlist }
 //   invoke("game_icon", { gameJson })      -> cached local .app icon path?
 //   invoke("back_to_main")                 -> hide overlay, focus main
 //   invoke("hide_overlay")                 -> hide overlay only
 // Slice 5: the panel merges the persisted profiles over the scan —
-// favorites lead the list (with a ★), hidden games never appear,
+// favorites lead the list (marked "Fav"), hidden games never appear,
 // and titles show their display-name overrides.
 // The last scan is cached in this page's memory: the overlay window
 // stays alive (hidden) for the app's lifetime, so reopening the
@@ -33,6 +34,7 @@ const recentsListEl = document.getElementById("recents-list");
 const refreshBtn = document.getElementById("refresh");
 const backBtn = document.getElementById("back");
 const hotkeyHintEl = document.getElementById("hotkey-hint");
+const panelGamertagEl = document.getElementById("panel-gamertag");
 
 const SOURCE_LABELS = {
   steam: "Steam",
@@ -158,7 +160,7 @@ function installedMarker() {
 function favMarker() {
   const marker = document.createElement("span");
   marker.className = "fav-marker";
-  marker.textContent = "★";
+  marker.textContent = "Fav";
   marker.title = "Favorite";
   return marker;
 }
@@ -343,6 +345,14 @@ async function loadState() {
     const state = await invoke("get_state");
     profilesMap = (state && state.profiles) || {};
     renderRecents(state && state.recents);
+    // v1.1.1: the gamertag travels with the panel — the same
+    // identity as the main window. Hidden until a gamertag is set.
+    if (panelGamertagEl) {
+      const tag =
+        state && state.gamer_profile && (state.gamer_profile.gamertag || "").trim();
+      panelGamertagEl.textContent = tag || "";
+      panelGamertagEl.hidden = !tag;
+    }
     // Display names / favorites / hidden flags may have changed
     // in the main window since the cached scan.
     if (cachedLibrary) render(cachedLibrary);

@@ -1,9 +1,16 @@
 /* KOVA V1 — main window styles.
    Identity: Avok cyan on the logo's near-black (rebrand 2026-10-23).
    Palette sampled from the Avok Interactive mark: body cyan #00D8F0,
-   highlight #2CE0F2, shadow cyan #039BBD, ground #0B0D0F. (V0–V1.4
+   highlight #2CE0F2, deep cyan #039BBD, ground #0B0D0F. (V0–V1.4
    used molten amber #FF7A1A on graphite.)
-   Shared with the overlay window (which adds overlay.css on top). */
+   Shared with the overlay window (which adds overlay.css on top).
+   v1.1.1 direction (design-taste-frontend, --app, seed 454005592):
+   true-black-flat — elevation by lightness steps alone, flat
+   colour, colour on data and status only, the brand palette and
+   type kept. Two brand devices are kept deliberately against the
+   style: the cyan-filled primary button (near-black label) and
+   the 3px cyan topbar rule — both are the Avok brand as Dre
+   knows it, not chrome the style would strip. */
 
 :root {
   --graphite: #0b0d0f;
@@ -14,7 +21,8 @@
   --accent: #00d8f0;
   --accent-dim: #039bbd;
   --text: #f5f5f4;
-  --muted: #a7abb3;
+  --muted: #b4b4b4;
+  --faint: #949494;
 }
 
 * {
@@ -26,6 +34,11 @@ body {
   background: var(--graphite);
   color: var(--text);
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
 }
 
 /* ------------------------------------------------------------ top bar */
@@ -60,7 +73,8 @@ body {
 }
 
 .brand-mark {
-  font-size: 1.9rem;
+  margin: 0;
+  font-size: 1.5rem;
   font-weight: 800;
   letter-spacing: 0.22em;
   color: var(--accent);
@@ -75,26 +89,60 @@ body {
 
 .tabs {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.25rem;
 }
 
+/* v1.1.1: the active tab is marked by brightness alone (the
+   true-black-flat move) — a lightness step and a white label,
+   not an accent fill. The update dot stays cyan: it is a status
+   mark, not chrome. */
 .tab {
   background: transparent;
   color: var(--muted);
-  border: 1px solid var(--border);
+  border: none;
   font-weight: 600;
-  padding: 0.55rem 1.15rem;
+  padding: 0.55rem 1rem;
 }
 
 .tab:hover {
-  background: var(--panel-3);
+  background: var(--panel-2);
   color: var(--text);
 }
 
 .tab.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #03181d;
+  background: var(--panel-3);
+  color: #ffffff;
+}
+
+/* The gamer profile chip at the top bar's right end: the
+   player's avatar and gamertag, one click to the Profile view. */
+.header-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem 0.35rem 0.45rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.header-profile:hover {
+  background: var(--panel-2);
+}
+
+.header-avatar {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.header-gamertag {
+  font-size: 0.92rem;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ------------------------------------------------------------- status */
@@ -181,13 +229,20 @@ main {
 
 .section-head h2 {
   margin: 0;
-  font-size: 1.45rem;
+  font-size: 1.25rem;
   letter-spacing: 0.02em;
 }
 
 .section-sub {
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+.view-title {
+  margin: 0 0 1.25rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .empty-note {
@@ -198,15 +253,15 @@ main {
 
 /* --------------------------------------------------------------- hero */
 
+/* v1.1.1: flat colour, no gradients or glows — the featured
+   game's own art carries the visual weight. */
 .hero {
   display: grid;
   grid-template-columns: 1.5fr 1fr;
   min-height: 250px;
   border-radius: 18px;
   overflow: hidden;
-  background:
-    radial-gradient(120% 160% at 85% 10%, rgba(0, 216, 240, 0.35), transparent 55%),
-    linear-gradient(120deg, #1d2026 20%, #121317 70%);
+  background: var(--panel-2);
   border: 1px solid var(--border);
 }
 
@@ -222,12 +277,11 @@ main {
   color: var(--accent);
   font-size: 0.78rem;
   font-weight: 800;
-  letter-spacing: 0.28em;
 }
 
 .hero-title {
   margin: 0;
-  font-size: 2.9rem;
+  font-size: 2rem;
   line-height: 1.05;
   letter-spacing: 0.01em;
 }
@@ -252,9 +306,7 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(90% 90% at 50% 40%, rgba(0, 216, 240, 0.5), transparent 70%),
-    linear-gradient(160deg, #00d8f0, #0d495d);
+  background: #0d495d;
 }
 
 /* Slice 5.2: the featured Avok title's own art over the hero
@@ -269,11 +321,10 @@ main {
 }
 
 .hero-mono {
-  font-size: 6.2rem;
+  font-size: 4.5rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   color: rgba(255, 255, 255, 0.92);
-  text-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
 }
 
 /* ------------------------------------------------------- shelves/rows */
@@ -314,7 +365,7 @@ main {
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 1.1rem;
+  gap: 1rem;
 }
 
 .tile {
@@ -325,13 +376,15 @@ main {
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+  transition: border-color 0.16s ease, background 0.16s ease;
 }
 
+/* v1.1.1: hover is a border step and a tone step — no lift, no
+   shadow. Resting cards carry a border or a tone step, never a
+   shadow. */
 .tile:hover {
-  transform: translateY(-4px);
   border-color: var(--accent-dim);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+  background: var(--panel-3);
 }
 
 .tile:focus-visible {
@@ -371,6 +424,9 @@ main {
 
 /* ---------------------------------------------------------------- art */
 
+/* v1.1.1: flat per-source fields, no gradients. The art block
+   is the game's cover area — its own art file, the store
+   capsule, or the monogram carries it. */
 .art {
   position: relative;
   aspect-ratio: 2 / 3;
@@ -380,7 +436,7 @@ main {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: linear-gradient(160deg, var(--panel-3), var(--panel));
+  background: var(--panel-3);
 }
 
 .art-wide {
@@ -390,18 +446,17 @@ main {
   border: 1px solid var(--border);
 }
 
-.art-steam { background: linear-gradient(160deg, #2a475e, #1b2838); }
-.art-epic { background: linear-gradient(160deg, #40404e, #17171d); }
-.art-gog { background: linear-gradient(160deg, #5b2a86, #27103f); }
-.art-itch { background: linear-gradient(160deg, #fa5c5c, #93303e); }
-.art-standalone { background: linear-gradient(160deg, #1f6f5c, #0d2f28); }
-.art-avok { background: linear-gradient(160deg, #00d8f0, #0d495d); }
+.art-steam { background: #1b2838; }
+.art-epic { background: #23232e; }
+.art-gog { background: #27103f; }
+.art-itch { background: #93303e; }
+.art-standalone { background: #0d2f28; }
+.art-avok { background: #0d495d; }
 
 .art-initial {
   font-size: 4.4rem;
   font-weight: 800;
   color: rgba(255, 255, 255, 0.9);
-  text-shadow: 0 8px 26px rgba(0, 0, 0, 0.5);
   user-select: none;
 }
 
@@ -448,16 +503,13 @@ main {
   top: 0.6rem;
   left: 0.6rem;
   z-index: 2;
-  background: rgba(10, 10, 12, 0.72);
-  backdrop-filter: blur(4px);
+  background: rgba(10, 10, 12, 0.85);
 }
 
 .tag {
   flex-shrink: 0;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--accent);
   border: 1px solid var(--accent-dim);
   border-radius: 999px;
@@ -466,10 +518,8 @@ main {
 
 .installed-badge {
   align-self: flex-start;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 800;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
   color: #03181d;
   background: var(--accent);
   border-radius: 999px;
@@ -533,8 +583,23 @@ main {
 
 .detail-title {
   margin: 0 0 1rem;
-  font-size: 2.3rem;
+  font-size: 1.75rem;
   line-height: 1.1;
+}
+
+.detail-blurb {
+  margin: 0 0 0.4rem;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.detail-desc {
+  margin: 0 0 1.2rem;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.55;
+  max-width: 70ch;
 }
 
 .detail-meta {
@@ -561,6 +626,33 @@ main {
   border-radius: 10px;
 }
 
+/* v1.1.1: the detail body below the title is two columns — facts
+   + Play on the left, the per-game profile card on the right —
+   so the page uses the window instead of leaving the right half
+   empty. The columns stack under 900px (the app's minimum width). */
+.detail-columns {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 2rem;
+  align-items: start;
+  margin-top: 0.2rem;
+}
+
+.detail-columns .detail-meta {
+  max-width: none;
+}
+
+.detail-columns .profile-card {
+  margin-top: 0;
+  max-width: none;
+}
+
+@media (max-width: 900px) {
+  .detail-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ------------------------------------------------------------ settings */
 
 .settings-card {
@@ -574,7 +666,7 @@ main {
 
 .settings-card h2 {
   margin: 0 0 0.5rem;
-  font-size: 1.3rem;
+  font-size: 1.125rem;
 }
 
 .settings-note {
@@ -646,10 +738,8 @@ main {
 
 .fav-badge {
   align-self: flex-start;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 800;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
   color: var(--accent);
   background: rgba(0, 216, 240, 0.1);
   border: 1px solid var(--accent-dim);
@@ -704,7 +794,7 @@ main {
 
 .profile-card h2 {
   margin: 0 0 0.5rem;
-  font-size: 1.3rem;
+  font-size: 1.125rem;
 }
 
 .profile-stats {
@@ -788,8 +878,7 @@ button.toggle-btn.on {
 
 .tile.kova-nav-focus {
   border-color: #00d8f0;
-  box-shadow: 0 0 0 3px rgba(0, 216, 240, 0.35), 0 14px 30px rgba(0, 0, 0, 0.45);
-  transform: translateY(-2px);
+  box-shadow: 0 0 0 3px rgba(0, 216, 240, 0.35);
 }
 
 .game-row.kova-nav-focus,
@@ -809,7 +898,10 @@ button.toggle-btn.on {
 }
 
 /* Update badge — the cyan dot on the Settings tab when a KOVA update
-   is waiting in the Updates card (v1.1.0 OTA). */
+   is waiting in the Updates card (v1.1.0 OTA). The [hidden] rule
+   matters: the class's display:inline-block beats the hidden
+   attribute's UA display:none without it, and the dot would show
+   even with no update waiting. */
 .update-badge {
   display: inline-block;
   width: 8px;
@@ -818,4 +910,358 @@ button.toggle-btn.on {
   border-radius: 50%;
   background: var(--accent);
   vertical-align: middle;
+}
+
+.update-badge[hidden] {
+  display: none;
+}
+
+.update-whatsnew {
+  margin-top: 1.2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.update-whatsnew h3 {
+  margin: 0 0 0.8rem;
+  font-size: 1rem;
+}
+.update-whatsnew h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.update-whatsnew ul {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.update-whatsnew li {
+  margin-bottom: 0.3rem;
+}
+.update-whatsnew li:last-child {
+  margin-bottom: 0;
+}
+
+/* --------------------------------------- v1.1.1: profile + store --- */
+
+/* Avatars: a circle on a tone step, holding an image, an inline
+   SVG, or the gamertag initial. */
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--panel-3);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.avatar-sm {
+  width: 28px;
+  height: 28px;
+}
+
+.avatar-md {
+  width: 48px;
+  height: 48px;
+}
+
+.avatar-lg {
+  width: 96px;
+  height: 96px;
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar svg {
+  width: 72%;
+  height: 72%;
+  display: block;
+}
+
+.avatar-initial {
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.avatar-sm .avatar-initial {
+  font-size: 0.85rem;
+}
+
+.avatar-md .avatar-initial {
+  font-size: 1.4rem;
+}
+
+.avatar-lg .avatar-initial {
+  font-size: 2.6rem;
+}
+
+/* The avatar picker in Settings: radio-style option buttons, the
+   selected one ringed in the accent. */
+.avatar-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+}
+
+.avatar-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.7rem 0.8rem 0.6rem;
+  color: var(--muted);
+}
+
+.avatar-option:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.avatar-option.selected {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.avatar-option-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.field-label {
+  font-weight: 600;
+}
+
+.profile-saved {
+  align-self: center;
+  color: var(--accent);
+  font-weight: 600;
+  margin: 0;
+}
+
+/* The Profile view header: avatar, gamertag, bio, edit action. */
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  margin-bottom: 1.5rem;
+}
+
+.profile-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.profile-name {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.profile-bio {
+  margin: 0 0 0.4rem;
+  color: var(--muted);
+  font-size: 0.98rem;
+  line-height: 1.5;
+}
+
+/* Stats as type, not tiles: one container split by 1px dividers,
+   label over value, a caption naming what the number counts. */
+.stats-strip {
+  display: flex;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin-bottom: 0.6rem;
+}
+
+.stat-cell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1rem 1.2rem;
+  min-width: 0;
+}
+
+.stat-cell + .stat-cell {
+  border-left: 1px solid var(--border);
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.stat-caption {
+  color: var(--faint);
+  font-size: 0.8rem;
+}
+
+/* The Avok Store: two art-forward cards side by side (one
+   column on a narrow window). */
+.store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.store-card {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.16s ease;
+}
+
+.store-card:hover {
+  border-color: var(--accent-dim);
+}
+
+.store-card .art-wide {
+  border: none;
+  border-radius: 0;
+  max-height: 220px;
+}
+
+.store-body {
+  padding: 1rem 1.1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  flex: 1;
+}
+
+.store-title {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.25;
+}
+
+.store-blurb {
+  margin: 0;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.store-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.store-meta {
+  margin: 0;
+  color: var(--faint);
+  font-size: 0.85rem;
+}
+
+.store-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: auto;
+  padding-top: 0.5rem;
+}
+
+/* The share card: a 1200×630 canvas preview at readable size,
+   with its two actions beside it. */
+.share-wrap {
+  max-width: 640px;
+}
+
+.share-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 0.9rem;
+}
+
+.share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+/* ------------------------------------------- narrow widths (gate) --- */
+
+/* The app's window never goes below 900px, but the inspector
+   measures at 390px: stack the shell instead of overflowing. */
+@media (max-width: 700px) {
+  main {
+    padding: 1rem;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-title,
+  .detail-title {
+    font-size: 1.5rem;
+  }
+
+  .hero-art {
+    min-height: 160px;
+  }
+
+  .library-controls {
+    flex-wrap: wrap;
+  }
+
+  .stats-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .stat-cell + .stat-cell {
+    border-left: none;
+  }
+
+  .stat-cell:nth-child(2),
+  .stat-cell:nth-child(4) {
+    border-left: 1px solid var(--border);
+  }
+
+  .stat-cell:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+
+  .profile-header {
+    flex-wrap: wrap;
+  }
 }

@@ -19,8 +19,13 @@
       <nav class="tabs" aria-label="KOVA views">
         <button class="tab active" type="button" data-view="home">Home</button>
         <button class="tab" type="button" data-view="library">Library</button>
+        <button class="tab" type="button" data-view="profile">Profile</button>
         <button class="tab" type="button" data-view="settings">Settings<span id="update-badge" class="update-badge" hidden></span></button>
       </nav>
+      <button id="header-profile" class="header-profile" type="button" aria-label="Open your gamer profile">
+        <span id="header-avatar" class="header-avatar" aria-hidden="true"></span>
+        <span id="header-gamertag" class="header-gamertag">Set gamertag</span>
+      </button>
     </header>
 
     <div id="status" class="status-bar" hidden></div>
@@ -35,6 +40,12 @@
           <span class="section-sub">Recently launched from KOVA</span>
         </div>
         <div id="quick-resume" class="strip-row"></div>
+
+        <div class="section-head">
+          <h2>Avok Store</h2>
+          <span class="section-sub">From Avok Interactive — free, live now</span>
+        </div>
+        <div id="avok-store" class="store-grid"></div>
 
         <div id="favorites-section" hidden>
           <div class="section-head">
@@ -53,6 +64,7 @@
 
       <!-- ===================== LIBRARY ===================== -->
       <section id="view-library" class="view" hidden>
+        <h1 class="view-title">Library</h1>
         <section id="summary" class="summary" hidden></section>
         <div class="library-controls">
           <input
@@ -75,6 +87,30 @@
         <p id="grid-empty" class="empty-note" hidden></p>
       </section>
 
+      <!-- ===================== PROFILE ===================== -->
+      <section id="view-profile" class="view" hidden>
+        <div id="profile-header" class="profile-header"></div>
+        <div id="profile-stats" class="stats-strip" role="list" aria-label="Your KOVA stats"></div>
+
+        <div class="section-head">
+          <h2>Recently played</h2>
+          <span class="section-sub">Launched from KOVA</span>
+        </div>
+        <div id="profile-recents" class="strip-row"></div>
+
+        <div class="section-head">
+          <h2>Wishlist</h2>
+          <span class="section-sub">Avok titles you want</span>
+        </div>
+        <div id="profile-wishlist" class="strip-row"></div>
+
+        <div class="section-head">
+          <h2>Share your profile</h2>
+          <span class="section-sub">Your card, to post anywhere — nothing leaves this machine until you share it</span>
+        </div>
+        <div id="profile-share" class="share-wrap"></div>
+      </section>
+
       <!-- ===================== GAME DETAIL ===================== -->
       <section id="view-detail" class="view" hidden>
         <button id="detail-back" class="ghost" type="button">&#8592; Back to Library</button>
@@ -83,6 +119,50 @@
 
       <!-- ===================== SETTINGS ===================== -->
       <section id="view-settings" class="view" hidden>
+        <h1 class="view-title">Settings</h1>
+        <div class="settings-card">
+          <h2>Gamer Profile</h2>
+          <p class="settings-note">
+            Your gamertag, avatar, and bio live on this machine only —
+            KOVA has no accounts, so nothing about you ever leaves it.
+          </p>
+          <div class="profile-field">
+            <label for="gamertag-input">Gamertag</label>
+            <input
+              id="gamertag-input"
+              class="text-input"
+              type="text"
+              placeholder="Your gamertag"
+              maxlength="32"
+              spellcheck="false"
+            />
+          </div>
+          <div class="profile-field">
+            <label for="bio-input">Bio</label>
+            <input
+              id="bio-input"
+              class="text-input"
+              type="text"
+              placeholder="One line about you"
+              maxlength="160"
+              spellcheck="false"
+            />
+          </div>
+          <div class="profile-field">
+            <span class="field-label" id="avatar-label">Avatar</span>
+            <div id="avatar-options" class="avatar-options" role="radiogroup" aria-labelledby="avatar-label"></div>
+            <div class="settings-row">
+              <button id="avatar-upload-btn" type="button" class="ghost">Upload a picture</button>
+              <input id="avatar-upload" type="file" accept="image/*" hidden />
+            </div>
+            <p class="profile-note">Uploads are shrunk on this machine to fit a 200 KB cap.</p>
+          </div>
+          <div class="settings-row">
+            <button id="profile-save" type="button">Save profile</button>
+            <span id="profile-save-note" class="profile-note profile-saved" hidden>Saved.</span>
+          </div>
+        </div>
+
         <div class="settings-card">
           <h2>Updates</h2>
           <p class="settings-note">
@@ -96,6 +176,10 @@
             <button id="update-check" type="button">Check for Updates</button>
             <button id="update-install" type="button" hidden>Install Update</button>
             <button id="update-restart" type="button" hidden>Restart to Finish</button>
+          </div>
+          <div id="update-whatsnew" class="update-whatsnew">
+            <h3>What's new</h3>
+            <div id="update-whatsnew-body"></div>
           </div>
         </div>
 
@@ -164,7 +248,7 @@
         <div class="settings-card">
           <h2>About</h2>
           <p class="settings-note">
-            KOVA by Avok Interactive · Version 1.1.0<br />
+            KOVA by Avok Interactive · Version 1.1.1<br />
             All your games. One system.
           </p>
         </div>

@@ -51,6 +51,17 @@ body.overlay-body {
   gap: 0.5rem;
 }
 
+/* v1.1.1: the gamertag in the panel header — the same identity
+   as the main window. Hidden until a gamertag is set. */
+.panel-gamertag {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .panel-actions button {
   padding: 0.45rem 0.85rem;
   font-size: 0.88rem;
@@ -125,10 +136,8 @@ body.overlay-body {
 .installed-marker {
   flex-shrink: 0;
   align-self: flex-start;
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 800;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
   color: #03181d;
   background: var(--accent);
   border-radius: 999px;
@@ -159,8 +168,6 @@ body.overlay-body {
   margin: 0 0 0.55rem;
   font-size: 0.82rem;
   font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
   color: var(--accent);
 }
 
@@ -173,7 +180,7 @@ body.overlay-body {
   scrollbar-color: var(--panel-3) transparent;
 }
 
-/* The art-<source> classes from styles.css supply the gradient. */
+/* The art-<source> classes from styles.css supply the flat field. */
 .recent-card {
   position: relative;
   overflow: hidden;
@@ -223,7 +230,6 @@ body.overlay-body {
   font-size: 1.7rem;
   font-weight: 800;
   color: rgba(255, 255, 255, 0.92);
-  text-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
   line-height: 1;
 }
 

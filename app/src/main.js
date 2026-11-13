@@ -9,10 +9,13 @@
 //   invoke("launch_game", { gameJson })       -> launch + record stats
 //        and recents; returns the updated state
 //   invoke("get_state")                       -> { recents,
-//        standalone_folders, profiles, show_hidden_games }
+//        standalone_folders, profiles, show_hidden_games,
+//        gamer_profile, wishlist }
 //   invoke("set_profile", { key, profile })   -> upsert a game profile
 //   invoke("clear_profile", { key })          -> remove a game profile
 //   invoke("set_show_hidden_games", { show })  -> updated state
+//   invoke("set_gamer_profile", { profile })  -> updated state
+//   invoke("set_wishlist", { wishlist })      -> updated state
 //   invoke("set_standalone_folders", { folders }) -> updated state
 //   invoke("game_icon", { gameJson })         -> cached local .app icon path?
 
@@ -55,10 +58,27 @@ const updateInstallBtn = document.getElementById("update-install");
 const updateRestartBtn = document.getElementById("update-restart");
 const updateBadgeEl = document.getElementById("update-badge");
 const hotkeyHintEl = document.getElementById("hotkey-hint");
+const headerProfileBtn = document.getElementById("header-profile");
+const headerAvatarEl = document.getElementById("header-avatar");
+const headerGamertagEl = document.getElementById("header-gamertag");
+const avokStoreEl = document.getElementById("avok-store");
+const profileHeaderEl = document.getElementById("profile-header");
+const profileStatsEl = document.getElementById("profile-stats");
+const profileRecentsEl = document.getElementById("profile-recents");
+const profileWishlistEl = document.getElementById("profile-wishlist");
+const profileShareEl = document.getElementById("profile-share");
+const gamertagInput = document.getElementById("gamertag-input");
+const bioInput = document.getElementById("bio-input");
+const avatarOptionsEl = document.getElementById("avatar-options");
+const avatarUploadBtn = document.getElementById("avatar-upload-btn");
+const avatarUploadInput = document.getElementById("avatar-upload");
+const profileSaveBtn = document.getElementById("profile-save");
+const profileSaveNoteEl = document.getElementById("profile-save-note");
 const tabBtns = Array.from(document.querySelectorAll(".tab"));
 const views = {
   home: document.getElementById("view-home"),
   library: document.getElementById("view-library"),
+  profile: document.getElementById("view-profile"),
   detail: document.getElementById("view-detail"),
   settings: document.getElementById("view-settings"),
 };
@@ -96,6 +116,35 @@ function avokGameArtFile(game) {
   return AVOK_GAME_ART[profileKey(game)] || null;
 }
 
+// v1.1.1 — Avok title copy for the store cards and the richer
+// detail pages. Plain facts about the two live titles: Dispatch
+// HQ runs the city's fire, police, and EMS from the dispatch
+// desk; The Open World is the life sim on its subreddit. No
+// invented URLs — the only link shown is the record's own
+// launch URI.
+const AVOK_GAME_INFO = {
+  "avok:dispatch-hq": {
+    blurb: "Real-time emergency dispatch sim",
+    edition: "Web edition · Free",
+    description:
+      "Run the city's emergency services from the dispatch desk — fire, " +
+      "police, and EMS. Every call is a decision, and every decision " +
+      "has a consequence.",
+  },
+  "avok:the-open-world": {
+    blurb: "Life sim on Reddit",
+    edition: "Reddit community · Free",
+    description:
+      "A life sim that lives on Reddit — build a life, earn, explore, " +
+      "and shape a world other players share.",
+  },
+};
+
+function avokGameInfo(game) {
+  if (!game) return null;
+  return AVOK_GAME_INFO[profileKey(game)] || null;
+}
+
 // --------------------------------------------------------------- state
 
 let lastResult = null;
@@ -104,6 +153,8 @@ let appState = {
   standalone_folders: [],
   profiles: {},
   show_hidden_games: false,
+  gamer_profile: { gamertag: "", avatar: "", bio: "" },
+  wishlist: [],
 };
 let activeFilter = "all";
 let searchQuery = "";
@@ -188,16 +239,24 @@ function profileKey(game) {
 
 // Fill any state fields an older persisted state (or backend)
 // did not provide, so the rest of the UI can assume they exist.
+// The gamer profile is deep-defaulted: a pre-v1.1.1 state file
+// has no `gamer_profile` key at all.
 function normalizeState(state) {
-  return Object.assign(
+  const normalized = Object.assign(
     {
       recents: [],
       standalone_folders: [],
       profiles: {},
       show_hidden_games: false,
+      wishlist: [],
     },
     state || {}
   );
+  normalized.gamer_profile = Object.assign(
+    { gamertag: "", avatar: "", bio: "" },
+    (state && state.gamer_profile) || {}
+  );
+  return normalized;
 }
 
 function defaultProfile() {
@@ -403,6 +462,16 @@ function showView(name) {
   for (const btn of tabBtns) {
     btn.classList.toggle("active", btn.dataset.view === tabFor);
   }
+  // Deep-linkable views: the hash names the view (replaceState, so
+  // the controller back button keeps its own meaning and the
+  // browser history stays clean). The detail view is not
+  // restorable from a hash alone — it needs a selected game — so
+  // loading with #detail falls back to Home (see init).
+  try {
+    window.history.replaceState(null, "", "#" + name);
+  } catch (err) {
+    /* a file:// or restricted context may refuse history writes */
+  }
   window.scrollTo({ top: 0 });
   // Slice 6: a view switch swaps the visible focus scope, so let
   // the navigator re-anchor (it keeps focus when the focused
@@ -469,7 +538,7 @@ function gameTile(game, mini) {
   const body = el("div", "tile-body");
   body.appendChild(el("h3", "tile-title", displayName(game)));
   const badges = [];
-  if (game.favorite) badges.push(el("span", "fav-badge", "★ Favorite"));
+  if (game.favorite) badges.push(el("span", "fav-badge", "Favorite"));
   if (isLocalInstall(game)) {
     badges.push(el("span", "installed-badge", "Installed"));
   }
@@ -505,7 +574,7 @@ function renderHero() {
   const hero = el("div", "hero");
   const copy = el("div", "hero-copy");
   const featuredIsLocal = featured && isLocalInstall(featured);
-  copy.appendChild(el("div", "hero-eyebrow", "AVOK INTERACTIVE · FEATURED"));
+  copy.appendChild(el("div", "hero-eyebrow", "Avok Interactive · Featured"));
   copy.appendChild(el("h1", "hero-title", featured ? displayName(featured) : "Dispatch HQ"));
   if (featuredIsLocal) {
     copy.appendChild(el("span", "installed-badge hero-installed", "Installed on this Mac"));
@@ -590,16 +659,23 @@ function renderFavorites() {
 
 function renderShelves() {
   shelvesEl.innerHTML = "";
+  if (!invoke) {
+    shelvesEl.appendChild(
+      el("p", "empty-note", "Library scan needs the KOVA app.")
+    );
+    return;
+  }
   if (!lastResult) {
     shelvesEl.appendChild(el("p", "empty-note", "Scanning your library…"));
     return;
   }
-  // The Avok shelf leads; store strips follow in canonical order,
-  // and a source with no games simply gets no strip.
-  const ordered = [...lastResult.sources].sort((a, b) => {
-    const rank = (s) => (s === "avok" ? -1 : SOURCE_ORDER.indexOf(s));
-    return rank(a.source) - rank(b.source);
-  });
+  // The Avok shelf has its own store section above
+  // (renderAvokStore), so it is not repeated here — one place per
+  // game. Store strips follow in canonical order, and a source
+  // with no games simply gets no strip.
+  const ordered = [...lastResult.sources]
+    .filter((report) => report.source !== "avok")
+    .sort((a, b) => SOURCE_ORDER.indexOf(a.source) - SOURCE_ORDER.indexOf(b.source));
   let rendered = 0;
   for (const report of ordered) {
     const games = gamesForSource(report.source).filter((g) => !g.hidden);
@@ -607,9 +683,7 @@ function renderShelves() {
     rendered += 1;
     const shelf = el("div", "shelf");
     const head = el("div", "shelf-head");
-    head.appendChild(
-      el("h3", "shelf-title", report.source === "avok" ? "Avok Interactive" : sourceLabel(report.source))
-    );
+    head.appendChild(el("h3", "shelf-title", sourceLabel(report.source)));
     head.appendChild(
       el("span", "shelf-count", games.length + (games.length === 1 ? " game" : " games"))
     );
@@ -624,6 +698,73 @@ function renderShelves() {
       el("p", "empty-note", "No games found in Steam, Epic, GOG, itch, or your standalone folders yet.")
     );
   }
+}
+
+// ---------------------------------------------------------- avok store
+
+// The Avok Store (v1.1.1): a store-like browse of Avok's own
+// titles — art-forward cards with the game's own description,
+// its edition, and Open / Details / Wishlist actions. KOVA sells
+// nothing: the cards link out to the live editions, they never
+// take payment.
+function storeCard(game) {
+  const card = el("article", "store-card");
+  card.dataset.navKey = game.key;
+  card.appendChild(gameArt(game, true));
+  const body = el("div", "store-body");
+  body.appendChild(el("h3", "store-title", displayName(game)));
+  const info = avokGameInfo(game);
+  if (info) {
+    body.appendChild(el("p", "store-blurb", info.blurb));
+    body.appendChild(el("p", "store-desc", info.description));
+  }
+  body.appendChild(
+    el(
+      "p",
+      "store-meta",
+      isLocalInstall(game)
+        ? "Installed on this Mac"
+        : (info && info.edition) || "Avok Interactive"
+    )
+  );
+  const actions = el("div", "store-actions");
+  const open = actionButton(game);
+  if (open) actions.appendChild(open);
+  const details = el("button", "ghost", "Details");
+  details.type = "button";
+  details.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openDetail(game);
+  });
+  actions.appendChild(details);
+  actions.appendChild(wishlistButton(game));
+  body.appendChild(actions);
+  card.appendChild(body);
+  card.addEventListener("click", () => openDetail(game));
+  return card;
+}
+
+function renderAvokStore() {
+  if (!avokStoreEl) return;
+  avokStoreEl.innerHTML = "";
+  if (!invoke) {
+    avokStoreEl.appendChild(
+      el("p", "empty-note", "Library scan needs the KOVA app.")
+    );
+    return;
+  }
+  if (!lastResult) {
+    avokStoreEl.appendChild(el("p", "empty-note", "Scanning your library…"));
+    return;
+  }
+  const games = gamesForSource("avok").filter((game) => !game.hidden);
+  if (games.length === 0) {
+    avokStoreEl.appendChild(
+      el("p", "empty-note", "No Avok titles to show right now.")
+    );
+    return;
+  }
+  for (const game of games) avokStoreEl.appendChild(storeCard(game));
 }
 
 // ------------------------------------------------------------- library
@@ -739,6 +880,13 @@ function renderFilters() {
 
 function renderGrid() {
   gridEl.innerHTML = "";
+  if (!lastResult) {
+    gridEmptyEl.hidden = false;
+    gridEmptyEl.textContent = invoke
+      ? "Scanning your library…"
+      : "Library scan needs the KOVA app.";
+    return;
+  }
   const games = visibleGames();
   for (const game of games) {
     gridEl.appendChild(gameTile(game, false));
@@ -777,6 +925,16 @@ function renderDetail() {
   const body = el("div", "detail-body");
   body.appendChild(el("h1", "detail-title", displayName(game)));
 
+  // v1.1.1: Avok titles get the richer page — their blurb and
+  // description above the facts, and the live web address shown
+  // as text (the Open button is the working link; a plain <a>
+  // would navigate the KOVA window itself).
+  const info = avokGameInfo(game);
+  if (info) {
+    body.appendChild(el("p", "detail-blurb", info.blurb));
+    body.appendChild(el("p", "detail-desc", info.description));
+  }
+
   const rows = [
     ["Source", sourceLabel(game.source)],
     ["Size", game.size_on_disk ? formatBytes(game.size_on_disk) : "—"],
@@ -787,6 +945,12 @@ function renderDetail() {
       "Edition / Status",
       isLocalInstall(game) ? "Installed on this Mac" : "Web edition",
     ]);
+    if (/^https?:\/\//i.test(game.launch_uri || "")) {
+      rows.push([
+        "On the web",
+        game.launch_uri.replace(/^https?:\/\//i, "").replace(/\/$/, ""),
+      ]);
+    }
   }
   if (game.install_path) rows.push(["Install path", game.install_path]);
   if (game.library && game.library !== "built-in") {
@@ -798,17 +962,26 @@ function renderDetail() {
     table.appendChild(el("dt", null, key));
     table.appendChild(el("dd", null, value));
   }
-  body.appendChild(table);
+
+  // v1.1.1: two columns below the title — the facts and the Play
+  // button on the left, the per-game profile card on the right —
+  // so the detail page uses the window instead of leaving the
+  // right half empty. Stacks to one column under 900px.
+  const columns = el("div", "detail-columns");
+  const factsCol = el("div", "detail-facts");
+  factsCol.appendChild(table);
 
   const action = actionButton(game);
   if (action) {
     action.classList.add("detail-play");
-    body.appendChild(action);
+    factsCol.appendChild(action);
   } else {
-    body.appendChild(el("p", "empty-note", "This title has no launch target on this machine."));
+    factsCol.appendChild(el("p", "empty-note", "This title has no launch target on this machine."));
   }
+  columns.appendChild(factsCol);
 
-  body.appendChild(renderProfileSection(game));
+  columns.appendChild(renderProfileSection(game));
+  body.appendChild(columns);
   detailEl.appendChild(body);
 }
 
@@ -923,7 +1096,7 @@ function renderProfileSection(game) {
   const favBtn = el(
     "button",
     "ghost toggle-btn" + (profile.favorite ? " on" : ""),
-    profile.favorite ? "★ Favorited" : "☆ Favorite"
+    profile.favorite ? "Favorited" : "Favorite"
   );
   favBtn.type = "button";
   favBtn.setAttribute("aria-pressed", String(Boolean(profile.favorite)));
@@ -939,6 +1112,11 @@ function renderProfileSection(game) {
     );
   });
   actions.appendChild(favBtn);
+
+  // v1.1.1: the wishlist is Avok titles only.
+  if (game.source === "avok") {
+    actions.appendChild(wishlistButton(game));
+  }
 
   const hideBtn = el(
     "button",
@@ -981,6 +1159,643 @@ function renderProfileSection(game) {
 
   section.appendChild(actions);
   return section;
+}
+
+// --------------------------------------------- gamer profile (v1.1.1)
+
+// The gamer profile is LOCAL: KOVA has no backend and no accounts,
+// so the gamertag, avatar, and bio live in kova-state.json on this
+// machine and nowhere else. The avatar value is "" (no avatar —
+// the UI shows the gamertag's initial), "builtin:<id>", or a data
+// URL from an upload (downscaled in the frontend, capped).
+const AVATAR_MAX_DATA_URL_CHARS = 300000; // ~200 KB image, base64
+
+// Built-in avatar options, drawn in code — no image files. "mark"
+// reuses the embedded Avok mark; "orbit" and "bolt" are small
+// inline SVGs in the brand palette; "initial" renders the
+// gamertag's first letter (and is the fallback for "").
+const AVATAR_OPTIONS = [
+  { id: "initial", label: "Initial", value: "" },
+  { id: "mark", label: "Avok mark", value: "builtin:mark" },
+  { id: "orbit", label: "Orbit", value: "builtin:orbit" },
+  { id: "bolt", label: "Bolt", value: "builtin:bolt" },
+];
+
+const AVATAR_SVGS = {
+  orbit:
+    '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="#00D8F0" stroke-width="3"/><circle cx="32" cy="32" r="14" fill="none" stroke="#039BBD" stroke-width="3"/><circle cx="50" cy="16" r="6" fill="#00D8F0"/></svg>',
+  bolt:
+    '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M36 6 L14 36 h12 L28 58 L50 26 h-13 z" fill="#00D8F0"/></svg>',
+};
+
+function gamerProfile() {
+  return (appState && appState.gamer_profile) || {
+    gamertag: "",
+    avatar: "",
+    bio: "",
+  };
+}
+
+function gamertagInitial() {
+  const tag = (gamerProfile().gamertag || "").trim();
+  return tag ? tag.charAt(0).toUpperCase() : "K";
+}
+
+// Render an avatar value into an element. `sizeClass` is one of
+// avatar-sm (28px), avatar-md (48px), avatar-lg (96px).
+function avatarElement(value, sizeClass) {
+  const wrap = el("span", "avatar " + (sizeClass || "avatar-md"));
+  if (value && value.indexOf("data:image/") === 0) {
+    const img = document.createElement("img");
+    img.className = "avatar-img";
+    img.alt = "";
+    img.src = value;
+    img.addEventListener("error", () => {
+      wrap.innerHTML = "";
+      wrap.appendChild(el("span", "avatar-initial", gamertagInitial()));
+    });
+    wrap.appendChild(img);
+    return wrap;
+  }
+  if (value === "builtin:mark" && window.AVOK_MARK_DATA_URI) {
+    const img = document.createElement("img");
+    img.className = "avatar-img";
+    img.alt = "";
+    img.src = window.AVOK_MARK_DATA_URI;
+    img.addEventListener("error", () => {
+      wrap.innerHTML = "";
+      wrap.appendChild(el("span", "avatar-initial", gamertagInitial()));
+    });
+    wrap.appendChild(img);
+    return wrap;
+  }
+  const builtin = value && value.indexOf("builtin:") === 0 ? value.slice(8) : null;
+  if (builtin && AVATAR_SVGS[builtin]) {
+    wrap.innerHTML = AVATAR_SVGS[builtin];
+    return wrap;
+  }
+  wrap.appendChild(el("span", "avatar-initial", gamertagInitial()));
+  return wrap;
+}
+
+function renderHeaderProfile() {
+  if (!headerGamertagEl || !headerAvatarEl) return;
+  const profile = gamerProfile();
+  headerGamertagEl.textContent = (profile.gamertag || "").trim() || "Set gamertag";
+  headerAvatarEl.innerHTML = "";
+  headerAvatarEl.appendChild(avatarElement(profile.avatar, "avatar-sm"));
+}
+
+// Downscale an uploaded image on a canvas until its data URL fits
+// the cap: PNG at 256px, then JPEG at 256px, then JPEG at 192px.
+// Rejects with a plain message when nothing fits (or the file is
+// not a readable image) — the caller shows it in the status bar.
+function downscaleAvatar(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || file.type.indexOf("image/") !== 0) {
+      reject(new Error("That file is not an image."));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read that image."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Could not read that image."));
+      img.onload = () => {
+        const attempts = [
+          { size: 256, type: "image/png", quality: undefined },
+          { size: 256, type: "image/jpeg", quality: 0.85 },
+          { size: 192, type: "image/jpeg", quality: 0.7 },
+        ];
+        for (const attempt of attempts) {
+          const scale = Math.min(
+            1,
+            attempt.size / Math.max(img.naturalWidth, img.naturalHeight)
+          );
+          const width = Math.max(1, Math.round(img.naturalWidth * scale));
+          const height = Math.max(1, Math.round(img.naturalHeight * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) continue;
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl =
+            attempt.quality === undefined
+              ? canvas.toDataURL(attempt.type)
+              : canvas.toDataURL(attempt.type, attempt.quality);
+          if (dataUrl.length <= AVATAR_MAX_DATA_URL_CHARS) {
+            resolve(dataUrl);
+            return;
+          }
+        }
+        reject(
+          new Error("That image is still too large after shrinking — try a smaller file.")
+        );
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// The avatar choice staged in the Settings form. null means "keep
+// the saved avatar"; any other value ("" / "builtin:<id>" / data
+// URL) is what Save will store.
+let stagedAvatar = null;
+
+function selectedAvatarValue() {
+  return stagedAvatar !== null ? stagedAvatar : gamerProfile().avatar || "";
+}
+
+function renderAvatarOptions() {
+  if (!avatarOptionsEl) return;
+  avatarOptionsEl.innerHTML = "";
+  const selected = selectedAvatarValue();
+  const options = AVATAR_OPTIONS.slice();
+  // A staged or saved upload gets its own option so the picker
+  // always shows what is selected.
+  if (selected && selected.indexOf("data:image/") === 0) {
+    options.push({ id: "upload", label: "Uploaded", value: selected });
+  }
+  for (const option of options) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "avatar-option" + (option.value === selected ? " selected" : "");
+    btn.setAttribute("role", "radio");
+    btn.setAttribute("aria-checked", String(option.value === selected));
+    btn.setAttribute("aria-label", option.label);
+    btn.title = option.label;
+    btn.appendChild(avatarElement(option.value, "avatar-md"));
+    btn.appendChild(el("span", "avatar-option-label", option.label));
+    btn.addEventListener("click", () => {
+      stagedAvatar = option.value;
+      renderAvatarOptions();
+    });
+    avatarOptionsEl.appendChild(btn);
+  }
+}
+
+function renderProfileSettings() {
+  if (!gamertagInput || !bioInput) return;
+  const profile = gamerProfile();
+  gamertagInput.value = profile.gamertag || "";
+  bioInput.value = profile.bio || "";
+  stagedAvatar = null;
+  renderAvatarOptions();
+}
+
+async function saveGamerProfile() {
+  if (!invoke) return;
+  const profile = {
+    gamertag: gamertagInput.value.trim(),
+    avatar: selectedAvatarValue(),
+    bio: bioInput.value.trim(),
+  };
+  try {
+    const updated = await invoke("set_gamer_profile", { profile });
+    if (updated) appState = normalizeState(updated);
+    stagedAvatar = null;
+    renderHeaderProfile();
+    renderProfile();
+    renderProfileSettings();
+    if (profileSaveNoteEl) {
+      profileSaveNoteEl.hidden = false;
+      window.setTimeout(() => {
+        profileSaveNoteEl.hidden = true;
+      }, 3000);
+    }
+  } catch (err) {
+    setStatus("Could not save profile: " + err, true);
+  }
+}
+
+// ---------------------------------------------------------------- wishlist
+
+// The wishlist is Avok titles only (the backend drops non-avok:
+// keys too) — the shelf is what KOVA showcases.
+function isWishlisted(game) {
+  return (appState.wishlist || []).includes(profileKey(game));
+}
+
+async function toggleWishlist(game) {
+  if (!invoke || !game || game.source !== "avok") return;
+  const key = profileKey(game);
+  const list = (appState.wishlist || []).slice();
+  const at = list.indexOf(key);
+  if (at >= 0) list.splice(at, 1);
+  else list.push(key);
+  try {
+    const updated = await invoke("set_wishlist", { wishlist: list });
+    if (updated) appState = normalizeState(updated);
+    renderAvokStore();
+    renderProfile();
+    if (currentView === "detail") renderDetail();
+    setStatus(
+      at >= 0
+        ? displayName(game) + " removed from your wishlist."
+        : displayName(game) + " added to your wishlist.",
+      false
+    );
+  } catch (err) {
+    setStatus("Could not update the wishlist: " + err, true);
+  }
+}
+
+function wishlistButton(game) {
+  const wished = isWishlisted(game);
+  const btn = el(
+    "button",
+    "ghost toggle-btn" + (wished ? " on" : ""),
+    wished ? "Wishlisted" : "Wishlist"
+  );
+  btn.type = "button";
+  btn.setAttribute("aria-pressed", String(wished));
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleWishlist(game);
+  });
+  return btn;
+}
+
+// ------------------------------------------------------------ profile view
+
+// Stats computed from the library as rendered (hidden games
+// excluded, same rule as the shelves). Before the first scan
+// there is no library: every value is null and the strip shows
+// dashes — a missing value, not a zero.
+function profileStats() {
+  if (!lastResult) {
+    return { games: null, favorites: null, totalLaunches: null, mostPlayed: null };
+  }
+  const games = allGames().filter((game) => !game.hidden);
+  const favorites = games.filter((game) => game.favorite).length;
+  const totalLaunches = games.reduce(
+    (sum, game) => sum + (game.launch_count || 0),
+    0
+  );
+  let mostPlayed = null;
+  for (const game of games) {
+    if (
+      (game.launch_count || 0) > 0 &&
+      (!mostPlayed || game.launch_count > mostPlayed.launch_count)
+    ) {
+      mostPlayed = game;
+    }
+  }
+  return { games: games.length, favorites, totalLaunches, mostPlayed };
+}
+
+function statCell(label, value, caption) {
+  const cell = el("div", "stat-cell");
+  cell.setAttribute("role", "listitem");
+  cell.appendChild(el("span", "stat-label", label));
+  cell.appendChild(el("span", "stat-value num", value));
+  if (caption) cell.appendChild(el("span", "stat-caption", caption));
+  return cell;
+}
+
+function renderProfile() {
+  if (!profileHeaderEl || !profileStatsEl) return;
+  const profile = gamerProfile();
+  const tag = (profile.gamertag || "").trim();
+
+  profileHeaderEl.innerHTML = "";
+  profileHeaderEl.appendChild(avatarElement(profile.avatar, "avatar-lg"));
+  const identity = el("div", "profile-identity");
+  identity.appendChild(el("h1", "profile-name", tag || "Your profile"));
+  identity.appendChild(
+    el(
+      "p",
+      "profile-bio",
+      (profile.bio || "").trim() || "Add a bio in Settings."
+    )
+  );
+  const editBtn = el("button", "ghost", "Edit profile");
+  editBtn.type = "button";
+  editBtn.addEventListener("click", () => showView("settings"));
+  identity.appendChild(editBtn);
+  profileHeaderEl.appendChild(identity);
+
+  const stats = profileStats();
+  profileStatsEl.innerHTML = "";
+  const dash = "—";
+  profileStatsEl.appendChild(
+    statCell(
+      "Games",
+      stats.games === null ? dash : String(stats.games),
+      "in your library"
+    )
+  );
+  profileStatsEl.appendChild(
+    statCell(
+      "Favorites",
+      stats.favorites === null ? dash : String(stats.favorites),
+      "starred"
+    )
+  );
+  profileStatsEl.appendChild(
+    statCell(
+      "Launches",
+      stats.totalLaunches === null ? dash : String(stats.totalLaunches),
+      "from KOVA"
+    )
+  );
+  profileStatsEl.appendChild(
+    statCell(
+      "Most played",
+      stats.mostPlayed ? displayName(stats.mostPlayed) : dash,
+      stats.mostPlayed
+        ? stats.mostPlayed.launch_count +
+          (stats.mostPlayed.launch_count === 1 ? " launch" : " launches")
+        : "nothing launched yet"
+    )
+  );
+
+  profileRecentsEl.innerHTML = "";
+  const recents = ((appState && appState.recents) || [])
+    .map(mergeProfile)
+    .filter((game) => !game.hidden)
+    .slice(0, 5);
+  if (recents.length === 0) {
+    profileRecentsEl.appendChild(
+      el(
+        "p",
+        "empty-note",
+        "Nothing here yet — launch a game from KOVA and it will be waiting here."
+      )
+    );
+  } else {
+    for (const game of recents) {
+      profileRecentsEl.appendChild(gameTile(game, true));
+    }
+  }
+
+  profileWishlistEl.innerHTML = "";
+  const wished = (appState.wishlist || [])
+    .map((key) => allGames().find((game) => game.key === key))
+    .filter(Boolean)
+    .filter((game) => !game.hidden);
+  if (wished.length === 0) {
+    profileWishlistEl.appendChild(
+      el(
+        "p",
+        "empty-note",
+        "No Avok titles on your wishlist yet — add one from the Avok Store or a game's page."
+      )
+    );
+  } else {
+    for (const game of wished) {
+      profileWishlistEl.appendChild(gameTile(game, true));
+    }
+  }
+
+  renderShareSection();
+}
+
+// ------------------------------------------------------------- share card
+
+// The shareable profile card (v1.1.1, local-only social): an
+// image and a text version of the gamertag + stats + shelf, made
+// on this machine. Nothing is sent anywhere — the player copies
+// or downloads it and posts it wherever they like.
+const SHARE_CARD_WIDTH = 1200;
+const SHARE_CARD_HEIGHT = 630;
+
+function shelfNames() {
+  return gamesForSource("avok")
+    .filter((game) => !game.hidden)
+    .map((game) => displayName(game));
+}
+
+function shareCardText() {
+  const profile = gamerProfile();
+  const tag = (profile.gamertag || "").trim() || "A KOVA player";
+  const stats = profileStats();
+  const lines = [tag + " on KOVA"];
+  if ((profile.bio || "").trim()) lines.push((profile.bio || "").trim());
+  if (stats.games !== null) {
+    lines.push(
+      stats.games +
+        " games · " +
+        stats.favorites +
+        " favorites · " +
+        stats.totalLaunches +
+        " launches"
+    );
+  }
+  if (stats.mostPlayed) {
+    lines.push(
+      "Most played: " +
+        displayName(stats.mostPlayed) +
+        " (" +
+        stats.mostPlayed.launch_count +
+        (stats.mostPlayed.launch_count === 1 ? " launch" : " launches") +
+        ")"
+    );
+  }
+  const shelf = shelfNames();
+  if (shelf.length > 0) lines.push("Avok shelf: " + shelf.join(" · "));
+  return lines.join("\n");
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("image failed to load"));
+    img.src = src;
+  });
+}
+
+function truncateForCanvas(text, maxChars) {
+  if (text.length <= maxChars) return text;
+  return text.slice(0, Math.max(0, maxChars - 1)).trimEnd() + "…";
+}
+
+// Draw the 1200×630 share card: ground, avatar, gamertag, bio,
+// the same four stats the Profile view shows, and the Avok shelf
+// line. Avatar images that fail to load fall back to the initial
+// letter — the card never fails on art.
+async function drawShareCard(canvas) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const profile = gamerProfile();
+  const stats = profileStats();
+  const tag = (profile.gamertag || "").trim() || "Your profile";
+  const bio = (profile.bio || "").trim();
+
+  ctx.fillStyle = "#0B0D0F";
+  ctx.fillRect(0, 0, SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT);
+  ctx.fillStyle = "#00D8F0";
+  ctx.fillRect(0, 0, SHARE_CARD_WIDTH, 8);
+
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#00D8F0";
+  ctx.font = "800 30px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillText("KOVA", 72, 64);
+  ctx.fillStyle = "#949494";
+  ctx.font = "400 24px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillText("by Avok Interactive", 178, 64);
+
+  const avatarCx = 136;
+  const avatarCy = 210;
+  const avatarR = 64;
+  let avatarDrawn = false;
+  const avatarValue = profile.avatar || "";
+  let avatarSrc = null;
+  if (avatarValue.indexOf("data:image/") === 0) {
+    avatarSrc = avatarValue;
+  } else if (avatarValue === "builtin:mark" && window.AVOK_MARK_DATA_URI) {
+    avatarSrc = window.AVOK_MARK_DATA_URI;
+  } else if (
+    avatarValue.indexOf("builtin:") === 0 &&
+    AVATAR_SVGS[avatarValue.slice(8)]
+  ) {
+    avatarSrc =
+      "data:image/svg+xml;charset=utf-8," +
+      encodeURIComponent(AVATAR_SVGS[avatarValue.slice(8)]);
+  }
+  if (avatarSrc) {
+    try {
+      const img = await loadImage(avatarSrc);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(avatarCx, avatarCy, avatarR, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(
+        img,
+        avatarCx - avatarR,
+        avatarCy - avatarR,
+        avatarR * 2,
+        avatarR * 2
+      );
+      ctx.restore();
+      avatarDrawn = true;
+    } catch (err) {
+      avatarDrawn = false;
+    }
+  }
+  if (!avatarDrawn) {
+    ctx.fillStyle = "#17191D";
+    ctx.beginPath();
+    ctx.arc(avatarCx, avatarCy, avatarR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#00D8F0";
+    ctx.font = "800 64px 'Segoe UI', system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(gamertagInitial(), avatarCx, avatarCy + 23);
+    ctx.textAlign = "left";
+  }
+
+  ctx.fillStyle = "#F5F5F4";
+  ctx.font = "800 56px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillText(truncateForCanvas(tag, 24), 232, 200);
+  if (bio) {
+    ctx.fillStyle = "#B4B4B4";
+    ctx.font = "400 28px 'Segoe UI', system-ui, sans-serif";
+    ctx.fillText(truncateForCanvas(bio, 52), 232, 248);
+  }
+
+  ctx.strokeStyle = "#262A30";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(72, 330);
+  ctx.lineTo(SHARE_CARD_WIDTH - 72, 330);
+  ctx.stroke();
+
+  const cells = [
+    ["Games", stats.games === null ? "—" : String(stats.games)],
+    ["Favorites", stats.favorites === null ? "—" : String(stats.favorites)],
+    ["Launches", stats.totalLaunches === null ? "—" : String(stats.totalLaunches)],
+    [
+      "Most played",
+      stats.mostPlayed ? truncateForCanvas(displayName(stats.mostPlayed), 16) : "—",
+    ],
+  ];
+  const cellWidth = (SHARE_CARD_WIDTH - 144) / 4;
+  cells.forEach(([label, value], i) => {
+    const x = 72 + i * cellWidth;
+    ctx.fillStyle = "#949494";
+    ctx.font = "400 22px 'Segoe UI', system-ui, sans-serif";
+    ctx.fillText(label, x, 384);
+    ctx.fillStyle = "#F5F5F4";
+    ctx.font = "700 40px 'Segoe UI', system-ui, sans-serif";
+    ctx.fillText(value, x, 436);
+  });
+
+  const shelf = shelfNames();
+  ctx.fillStyle = "#949494";
+  ctx.font = "400 24px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillText(
+    shelf.length > 0 ? "Avok shelf: " + shelf.join(" · ") : "Avok Interactive",
+    72,
+    572
+  );
+}
+
+function renderShareSection() {
+  if (!profileShareEl) return;
+  profileShareEl.innerHTML = "";
+  const canvas = document.createElement("canvas");
+  canvas.className = "share-canvas";
+  canvas.width = SHARE_CARD_WIDTH;
+  canvas.height = SHARE_CARD_HEIGHT;
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", "Preview of your shareable KOVA profile card");
+  profileShareEl.appendChild(canvas);
+  drawShareCard(canvas);
+
+  const actions = el("div", "share-actions");
+  const downloadBtn = el("button", null, "Download image");
+  downloadBtn.type = "button";
+  downloadBtn.addEventListener("click", () => {
+    if (!canvas.toBlob) {
+      setStatus("This browser cannot download the card image.", true);
+      return;
+    }
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setStatus("Could not make the card image.", true);
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "kova-profile-card.png";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatus("Profile card downloaded.", false);
+    }, "image/png");
+  });
+  actions.appendChild(downloadBtn);
+
+  const copyBtn = el("button", "ghost", "Copy text");
+  copyBtn.type = "button";
+  copyBtn.addEventListener("click", async () => {
+    const text = shareCardText();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const area = document.createElement("textarea");
+        area.value = text;
+        area.style.position = "fixed";
+        area.style.opacity = "0";
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        area.remove();
+      }
+      setStatus("Profile text copied to the clipboard.", false);
+    } catch (err) {
+      setStatus("Could not copy the profile text: " + err, true);
+    }
+  });
+  actions.appendChild(copyBtn);
+  profileShareEl.appendChild(actions);
 }
 
 // ------------------------------------------------------------ settings
@@ -1038,6 +1853,53 @@ function renderHiddenSettings() {
 // clicks — nothing auto-installs.
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 let pendingUpdateVersion = null;
+
+// Release notes bundled in-app (v1.1.1). The Updates card shows the
+// current version's notes first, then the previous version's — so the
+// 1.1.0 notes are visible inside the app, not just on GitHub. The
+// feed's notes still drive the available-update display. Bump
+// APP_VERSION with each release and add its notes at the top of
+// RELEASE_ORDER.
+const APP_VERSION = "1.1.1";
+const RELEASE_ORDER = ["1.1.1", "1.1.0"];
+const RELEASE_NOTES = {
+  "1.1.1": [
+    "Release notes now show in the app — what changed in each version, right in Settings.",
+    "A polished, more platform-feel KOVA: cleaner screens, smoother navigation everywhere.",
+    "Your gamertag and gamer profile: your tag, your avatar, your stats, all on your machine.",
+    "A sharper Avok shelf with richer game pages and a local wishlist.",
+    "Share your profile card anywhere.",
+    "This update arrived over the air, the first one ever for KOVA.",
+  ],
+  "1.1.0": [
+    "KOVA can now update itself. Check for updates in Settings, read what's new, and install when you choose — updates never install silently.",
+    "Branded DMG installer with the KOVA wordmark and install arrow.",
+    "Same library, same controller navigation, same Quick Panel — now on 1.1.0.",
+    "This is the last manual install. From here, updates arrive in the app.",
+  ],
+};
+
+function renderWhatsNew() {
+  const body = document.getElementById("update-whatsnew-body");
+  if (!body) return;
+  const start = RELEASE_ORDER.indexOf(APP_VERSION);
+  const shown = start >= 0 ? RELEASE_ORDER.slice(start, start + 2) : [APP_VERSION];
+  body.innerHTML = "";
+  for (const version of shown) {
+    const notes = RELEASE_NOTES[version];
+    if (!notes) continue;
+    const heading = document.createElement("h4");
+    heading.textContent = "KOVA " + version;
+    body.appendChild(heading);
+    const list = document.createElement("ul");
+    for (const note of notes) {
+      const item = document.createElement("li");
+      item.textContent = note;
+      list.appendChild(item);
+    }
+    body.appendChild(list);
+  }
+}
 
 function setUpdateBadge(show) {
   if (updateBadgeEl) updateBadgeEl.hidden = !show;
@@ -1169,7 +2031,10 @@ function renderAll() {
   renderHero();
   renderQuickResume();
   renderFavorites();
+  renderAvokStore();
   renderShelves();
+  renderHeaderProfile();
+  renderProfile();
   renderHiddenSettings();
   if (lastResult) {
     renderSummary();
@@ -1228,12 +2093,36 @@ async function loadState() {
   renderQuickResume();
   renderFolders();
   renderHiddenSettings();
+  renderHeaderProfile();
+  renderProfileSettings();
 }
 
 // ---------------------------------------------------------------- init
 
 for (const btn of tabBtns) {
   btn.addEventListener("click", () => showView(btn.dataset.view));
+}
+if (headerProfileBtn) {
+  headerProfileBtn.addEventListener("click", () => showView("profile"));
+}
+if (profileSaveBtn) {
+  profileSaveBtn.addEventListener("click", saveGamerProfile);
+}
+if (avatarUploadBtn && avatarUploadInput) {
+  avatarUploadBtn.addEventListener("click", () => avatarUploadInput.click());
+  avatarUploadInput.addEventListener("change", async () => {
+    const file = avatarUploadInput.files && avatarUploadInput.files[0];
+    // Clear the input so picking the same file again still fires.
+    avatarUploadInput.value = "";
+    if (!file) return;
+    try {
+      stagedAvatar = await downscaleAvatar(file);
+      renderAvatarOptions();
+      setStatus("Picture ready — Save profile to keep it.", false);
+    } catch (err) {
+      setStatus(err.message || String(err), true);
+    }
+  });
 }
 detailBackBtn.addEventListener("click", () => showView("library"));
 rescanBtn.addEventListener("click", scan);
@@ -1291,10 +2180,27 @@ if (window.KovaNav) {
 window.addEventListener("DOMContentLoaded", async () => {
   renderHero();
   await loadState();
+  // Render the profile face and the store from the first paint,
+  // even before the scan lands (and even without a Tauri runtime:
+  // the honest empty states, not blank sections). The scan
+  // re-renders everything with data.
+  renderHeaderProfile();
+  renderProfile();
+  renderAvokStore();
+  renderShelves();
+  renderGrid();
   scan();
+  // Deep-linkable views: #library, #profile, or #settings open
+  // that view on load. #detail has no game to show, so it falls
+  // back to Home.
+  const hashView = (window.location.hash || "").replace(/^#/, "");
+  if (hashView === "library" || hashView === "profile" || hashView === "settings") {
+    showView(hashView);
+  }
   if (updateCheckBtn) updateCheckBtn.addEventListener("click", () => checkForUpdates(true));
   if (updateInstallBtn) updateInstallBtn.addEventListener("click", installUpdate);
   if (updateRestartBtn) updateRestartBtn.addEventListener("click", restartForUpdate);
+  renderWhatsNew();
   checkForUpdates(false);
   setInterval(() => checkForUpdates(false), UPDATE_CHECK_INTERVAL_MS);
 });
