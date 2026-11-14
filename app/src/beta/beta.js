@@ -374,7 +374,7 @@ function demoCall(cmd, args) {
     case "import_state":
       return Promise.resolve(JSON.parse(JSON.stringify(DEMO_STATE)));
     case "check_update":
-      return Promise.resolve({ available: false, version: null, current_version: "1.3.1", notes: null });
+      return Promise.resolve({ available: false, version: null, current_version: "1.3.2", notes: null });
     case "launch_game":
     case "launch_uri":
     case "notify_update_available":
@@ -2126,6 +2126,244 @@ async function renderDetailSaves(root, game) {
 // v1.3.1: Dre named the store review address — his Gmail.
 const STORE_REVIEW_ADDRESS = "deandrewh26@gmail.com";
 
+// ------------------------------------------------------- store application
+// The application form lives in a modal, built once and kept for
+// the session. Closing the modal hides it — the form is never
+// rebuilt or cleared, so a half-filled application survives
+// closing the modal and leaving the store view. The modal is
+// appended to the body, not the store view, so re-rendering the
+// store never touches it.
+
+let applicationModal = null; // { overlay, fields, opener }
+
+function buildApplicationModal() {
+  if (applicationModal) return applicationModal;
+  const overlay = el("div", "modal-overlay");
+  overlay.hidden = true;
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-labelledby", "store-application-title");
+  const card = el("div", "modal-card");
+  const head = el("div", "modal-head");
+  const title = el("h2", null, "Submit your game");
+  title.id = "store-application-title";
+  head.appendChild(title);
+  const closeBtn = el("button", "modal-close", "×");
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "Close application form");
+  closeBtn.addEventListener("click", closeApplicationModal);
+  head.appendChild(closeBtn);
+  card.appendChild(head);
+  const body = el("div", "modal-body");
+  if (STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET") {
+    const reviewNote = el(
+      "div",
+      "notice",
+      "The store review address isn't set yet. Download your application below and send it once the address is published — the email button will open with no recipient until then."
+    );
+    reviewNote.style.marginBottom = "16px";
+    body.appendChild(reviewNote);
+  }
+  const form = el("div");
+  const fields = {};
+  let firstGroup = true;
+  function addGroup(groupTitle) {
+    const groupHead = el("h3", null, groupTitle);
+    groupHead.style.marginTop = firstGroup ? "0" : "24px";
+    firstGroup = false;
+    form.appendChild(groupHead);
+  }
+  function addField(key, label, type, placeholder, hint) {
+    const field = el("div", "field");
+    field.style.marginTop = "16px";
+    field.appendChild(el("label", null, label));
+    const input = el("input", "input");
+    input.type = type;
+    input.placeholder = placeholder;
+    input.setAttribute("aria-label", label);
+    fields[key] = input;
+    field.appendChild(input);
+    if (hint) field.appendChild(el("div", "hint", hint));
+    form.appendChild(field);
+  }
+  // WHAT: the game itself.
+  addGroup("What is the game");
+  addField("title", "Game title", "text", "e.g. Tiny Rogue");
+  addField("genre", "Genre", "text", "e.g. Roguelike deckbuilder");
+  const descField = el("div", "field");
+  descField.style.marginTop = "16px";
+  descField.appendChild(el("label", null, "Description"));
+  const descInput = el("textarea", "textarea");
+  descInput.rows = 3;
+  descInput.placeholder = "What is your game, in one or two sentences?";
+  descInput.setAttribute("aria-label", "Game description");
+  fields.description = descInput;
+  descField.appendChild(descInput);
+  form.appendChild(descField);
+  addField("art", "Art URL", "url", "https://…", "Optional. A cover image for your listing.");
+  addField("version", "Version", "text", "e.g. 1.0.0", "Optional. Defaults to 1.0.0.");
+  // WHERE: at least one platform link.
+  addGroup("Where does it live");
+  addField("web", "Web link", "url", "https://…", "At least one of the three links is required.");
+  addField("file", "File link", "url", "https://…", "The PC download, e.g. your itch.io page.");
+  addField("reddit", "Reddit link", "url", "https://www.reddit.com/r/…");
+  // WHEN: wanted list / release timing.
+  addGroup("When do you want it listed");
+  addField("timing", "Timing", "text", "e.g. As soon as it's approved");
+  // WHO: the developer.
+  addGroup("Who are you");
+  addField("developer", "Developer name", "text", "e.g. Avok Interactive");
+  addField("contact", "Contact", "text", "e.g. you@example.com");
+  body.appendChild(form);
+
+  const submitActions = el("div", "card-actions");
+  const downloadBtn = el("button", "btn btn-primary", "Download application");
+  downloadBtn.type = "button";
+  downloadBtn.addEventListener("click", () => {
+    const app = collectApplication(fields);
+    if (!app) return;
+    downloadFile(
+      "kova-store-application-" + app.id + ".json",
+      JSON.stringify(app, null, 2) + "\n"
+    );
+    setStatus("Application downloaded. Send it to Avok for review.");
+  });
+  const emailBtn = el("button", "btn", "Send via email");
+  emailBtn.type = "button";
+  emailBtn.addEventListener("click", () => {
+    const app = collectApplication(fields);
+    if (!app) return;
+    window.open(applicationMailto(app), "_self");
+  });
+  submitActions.appendChild(downloadBtn);
+  submitActions.appendChild(emailBtn);
+  body.appendChild(submitActions);
+  card.appendChild(body);
+  overlay.appendChild(card);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closeApplicationModal();
+  });
+  document.body.appendChild(overlay);
+  applicationModal = { overlay, fields, opener: null };
+  return applicationModal;
+}
+
+function openApplicationModal(opener) {
+  const modal = buildApplicationModal();
+  modal.opener = opener || null;
+  modal.overlay.hidden = false;
+  document.body.style.overflow = "hidden";
+  if (modal.fields.title) modal.fields.title.focus();
+}
+
+function closeApplicationModal() {
+  if (!applicationModal) return;
+  applicationModal.overlay.hidden = true;
+  document.body.style.overflow = "";
+  const opener = applicationModal.opener;
+  applicationModal.opener = null;
+  if (opener && opener.isConnected && typeof opener.focus === "function") opener.focus();
+}
+
+// Escape closes the application modal, when it is open. The
+// event stops here: KovaNav treats Escape as Back (and would
+// route the store back to Home) if it reaches the window.
+document.addEventListener("keydown", (event) => {
+  if (
+    event.key === "Escape" &&
+    applicationModal &&
+    !applicationModal.overlay.hidden
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeApplicationModal();
+  }
+});
+
+// Validates the form and returns the application package, or
+// null after reporting the first problem.
+function collectApplication(fields) {
+  const title = fields.title.value.trim();
+  const description = fields.description.value.trim();
+  const genre = fields.genre.value.trim();
+  const developer = fields.developer.value.trim();
+  const contact = fields.contact.value.trim();
+  const timing = fields.timing.value.trim();
+  const art = fields.art.value.trim();
+  const web = fields.web.value.trim();
+  const file = fields.file.value.trim();
+  const reddit = fields.reddit.value.trim();
+  const version = fields.version.value.trim() || "1.0.0";
+  if (!title || !description || !genre || !developer || !contact || !timing) {
+    setStatus("A title, description, genre, developer, contact, and timing are all required.", true);
+    return null;
+  }
+  if (!web && !file && !reddit) {
+    setStatus("At least one platform link is required: web, file, or reddit.", true);
+    return null;
+  }
+  const links = [
+    ["web link", web],
+    ["file link", file],
+    ["reddit link", reddit],
+    ["art URL", art],
+  ];
+  for (const [label, value] of links) {
+    if (value && !isHttpUrl(value)) {
+      setStatus("That " + label + " is not a valid http(s) URL.", true);
+      return null;
+    }
+  }
+  const platforms = {};
+  if (web) platforms.web = web;
+  if (file) platforms.file = file;
+  if (reddit) platforms.reddit = reddit;
+  return {
+    kind: "kova-store-application",
+    application_version: 1,
+    id: slugify(title) || "untitled",
+    title,
+    description,
+    genre,
+    art: art || null,
+    platforms,
+    developer,
+    contact,
+    timing,
+    free: true,
+    version,
+  };
+}
+
+// The application as a mailto: pre-filled plain text. With no
+// review address named yet, the recipient is left blank.
+function applicationMailto(app) {
+  const lines = [
+    "Title: " + app.title,
+    "Developer: " + app.developer,
+    "Contact: " + app.contact,
+    "Genre: " + app.genre,
+    "Timing: " + app.timing,
+    "Version: " + app.version,
+    "",
+    "Description: " + app.description.slice(0, 300),
+  ];
+  if (app.platforms.web) lines.push("Web: " + app.platforms.web);
+  if (app.platforms.file) lines.push("File: " + app.platforms.file);
+  if (app.platforms.reddit) lines.push("Reddit: " + app.platforms.reddit);
+  if (app.art) lines.push("Art: " + app.art);
+  const address =
+    STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET" ? "" : STORE_REVIEW_ADDRESS;
+  return (
+    "mailto:" +
+    address +
+    "?subject=" +
+    encodeURIComponent("KOVA Store application: " + app.title) +
+    "&body=" +
+    encodeURIComponent(lines.join("\n"))
+  );
+}
+
 async function renderStore() {
   const root = views.store;
   clear(root);
@@ -2149,7 +2387,7 @@ async function renderStore() {
     "notice" + (catalogData.source === "bundled" ? "" : " info"),
     catalogData.source === "bundled"
       ? "Offline catalog. Showing the bundled listings. Connect to see the full store."
-      : "Live catalog. Listings approved by Melo and Dre."
+      : "Live catalog. Listings reviewed by the Avok team."
   );
   sourceNote.style.marginBottom = "20px";
   root.appendChild(sourceNote);
@@ -2228,183 +2466,26 @@ async function renderStore() {
     root.appendChild(grid);
   }
 
-  // Submission form — builds a store application package the dev
-  // downloads as JSON or sends by email. No endpoint exists yet.
+  // Submission — a card that opens the application form in a
+  // modal. The form itself lives in the modal (built once, kept
+  // for the session); the card carries the approval line and the
+  // button that opens it.
   const submitSection = el("div", "view-section");
   submitSection.style.marginTop = "32px";
   submitSection.appendChild(el("div", "section-head")).appendChild(el("h2", null, "Submit your game"));
   const submitCard = el("div", "card");
-  submitCard.appendChild(
-    el(
-      "p",
-      "card-sub",
-      "Free games only, for now. Tell us what your game is, where it lives, and when you want it listed, then download the application or send it by email. It goes through review before it appears in the store. Listings are approved by both Melo and Dre."
-    )
+  const submitSub = el(
+    "p",
+    "card-sub",
+    "Free games only, for now. Tell us what your game is, where it lives, and when you want it listed, then download the application or send it by email. A member of the Avok team reviews every application — there's no automatic submission."
   );
-  if (STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET") {
-    const reviewNote = el(
-      "div",
-      "notice",
-      "The store review address isn't set yet. Download your application below and send it once the address is published — the email button will open with no recipient until then."
-    );
-    reviewNote.style.marginBottom = "16px";
-    submitCard.appendChild(reviewNote);
-  }
-  const form = el("div");
-  const fields = {};
-  function addGroup(title) {
-    const head = el("h3", null, title);
-    head.style.marginTop = "24px";
-    form.appendChild(head);
-  }
-  function addField(key, label, type, placeholder, hint) {
-    const field = el("div", "field");
-    field.style.marginTop = "16px";
-    field.appendChild(el("label", null, label));
-    const input = el("input", "input");
-    input.type = type;
-    input.placeholder = placeholder;
-    input.setAttribute("aria-label", label);
-    fields[key] = input;
-    field.appendChild(input);
-    if (hint) field.appendChild(el("div", "hint", hint));
-    form.appendChild(field);
-  }
-  // WHAT: the game itself.
-  addGroup("What is the game");
-  addField("title", "Game title", "text", "e.g. Tiny Rogue");
-  addField("genre", "Genre", "text", "e.g. Roguelike deckbuilder");
-  const descField = el("div", "field");
-  descField.style.marginTop = "16px";
-  descField.appendChild(el("label", null, "Description"));
-  const descInput = el("textarea", "textarea");
-  descInput.rows = 3;
-  descInput.placeholder = "What is your game, in one or two sentences?";
-  descInput.setAttribute("aria-label", "Game description");
-  fields.description = descInput;
-  descField.appendChild(descInput);
-  form.appendChild(descField);
-  addField("art", "Art URL", "url", "https://…", "Optional. A cover image for your listing.");
-  addField("version", "Version", "text", "e.g. 1.0.0", "Optional. Defaults to 1.0.0.");
-  // WHERE: at least one platform link.
-  addGroup("Where does it live");
-  addField("web", "Web link", "url", "https://…", "At least one of the three links is required.");
-  addField("file", "File link", "url", "https://…", "The PC download, e.g. your itch.io page.");
-  addField("reddit", "Reddit link", "url", "https://www.reddit.com/r/…");
-  // WHEN: wanted list / release timing.
-  addGroup("When do you want it listed");
-  addField("timing", "Timing", "text", "e.g. As soon as it's approved");
-  // WHO: the developer.
-  addGroup("Who are you");
-  addField("developer", "Developer name", "text", "e.g. Avok Interactive");
-  addField("contact", "Contact", "text", "e.g. you@example.com");
-  submitCard.appendChild(form);
-
-  // Validates the form and returns the application package, or
-  // null after reporting the first problem.
-  function collectApplication() {
-    const title = fields.title.value.trim();
-    const description = fields.description.value.trim();
-    const genre = fields.genre.value.trim();
-    const developer = fields.developer.value.trim();
-    const contact = fields.contact.value.trim();
-    const timing = fields.timing.value.trim();
-    const art = fields.art.value.trim();
-    const web = fields.web.value.trim();
-    const file = fields.file.value.trim();
-    const reddit = fields.reddit.value.trim();
-    const version = fields.version.value.trim() || "1.0.0";
-    if (!title || !description || !genre || !developer || !contact || !timing) {
-      setStatus("A title, description, genre, developer, contact, and timing are all required.", true);
-      return null;
-    }
-    if (!web && !file && !reddit) {
-      setStatus("At least one platform link is required: web, file, or reddit.", true);
-      return null;
-    }
-    const links = [
-      ["web link", web],
-      ["file link", file],
-      ["reddit link", reddit],
-      ["art URL", art],
-    ];
-    for (const [label, value] of links) {
-      if (value && !isHttpUrl(value)) {
-        setStatus("That " + label + " is not a valid http(s) URL.", true);
-        return null;
-      }
-    }
-    const platforms = {};
-    if (web) platforms.web = web;
-    if (file) platforms.file = file;
-    if (reddit) platforms.reddit = reddit;
-    return {
-      kind: "kova-store-application",
-      application_version: 1,
-      id: slugify(title) || "untitled",
-      title,
-      description,
-      genre,
-      art: art || null,
-      platforms,
-      developer,
-      contact,
-      timing,
-      free: true,
-      version,
-    };
-  }
-
-  // The application as a mailto: pre-filled plain text. With no
-  // review address named yet, the recipient is left blank.
-  function applicationMailto(app) {
-    const lines = [
-      "Title: " + app.title,
-      "Developer: " + app.developer,
-      "Contact: " + app.contact,
-      "Genre: " + app.genre,
-      "Timing: " + app.timing,
-      "Version: " + app.version,
-      "",
-      "Description: " + app.description.slice(0, 300),
-    ];
-    if (app.platforms.web) lines.push("Web: " + app.platforms.web);
-    if (app.platforms.file) lines.push("File: " + app.platforms.file);
-    if (app.platforms.reddit) lines.push("Reddit: " + app.platforms.reddit);
-    if (app.art) lines.push("Art: " + app.art);
-    const address =
-      STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET" ? "" : STORE_REVIEW_ADDRESS;
-    return (
-      "mailto:" +
-      address +
-      "?subject=" +
-      encodeURIComponent("KOVA Store application: " + app.title) +
-      "&body=" +
-      encodeURIComponent(lines.join("\n"))
-    );
-  }
-
+  submitSub.style.marginBottom = "0";
+  submitCard.appendChild(submitSub);
   const submitActions = el("div", "card-actions");
-  const downloadBtn = el("button", "btn btn-primary", "Download application");
-  downloadBtn.type = "button";
-  downloadBtn.addEventListener("click", () => {
-    const app = collectApplication();
-    if (!app) return;
-    downloadFile(
-      "kova-store-application-" + app.id + ".json",
-      JSON.stringify(app, null, 2) + "\n"
-    );
-    setStatus("Application downloaded. Send it to Avok for review.");
-  });
-  const emailBtn = el("button", "btn", "Send via email");
-  emailBtn.type = "button";
-  emailBtn.addEventListener("click", () => {
-    const app = collectApplication();
-    if (!app) return;
-    window.open(applicationMailto(app), "_self");
-  });
-  submitActions.appendChild(downloadBtn);
-  submitActions.appendChild(emailBtn);
+  const openBtn = el("button", "btn btn-primary", "Open application");
+  openBtn.type = "button";
+  openBtn.addEventListener("click", () => openApplicationModal(openBtn));
+  submitActions.appendChild(openBtn);
   submitCard.appendChild(submitActions);
   submitSection.appendChild(submitCard);
   root.appendChild(submitSection);

@@ -1020,6 +1020,64 @@ img { display: block; }
 }
 .toast.error { background: var(--negative); }
 
+/* ------------------------------------------------------------- modal */
+
+/* The store application form floats above the page on a scrim.
+   The shadow is allowed here — a dialog truly floats, like the
+   toast. z-index 45 sits above the bottom bar (40) and below the
+   toast (50), so a validation error still shows over the modal. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 16px 16px;
+  background: rgba(17, 24, 39, 0.45);
+  z-index: 45;
+  overflow-y: auto;
+}
+.modal-card {
+  width: 640px;
+  max-width: 100%;
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); /* taste-skill-ignore: the modal is a floating dialog; shadows are allowed on what floats */
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px var(--card-pad);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.modal-head h2 { font-size: var(--fs-section); font-weight: 600; }
+.modal-close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.modal-close:hover { border-color: var(--faint); color: var(--text); }
+.modal-body { padding: var(--card-pad); overflow-y: auto; }
+.modal-body h3 { font-size: var(--fs-section); font-weight: 600; margin-bottom: 4px; }
+.modal-body .card-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+
 /* -------------------------------------------------- focus + nav ring */
 
 /* Visible focus everywhere: the nav ring (gamepad/keyboard) and the
@@ -1088,6 +1146,8 @@ input:focus, select:focus, textarea:focus { outline: none; }
   .library-toolbar { flex-wrap: wrap; }
   .library-toolbar .select { width: 100%; margin-left: 0; }
   .toast { left: 16px; right: 16px; bottom: 72px; max-width: none; }
+  .modal-overlay { padding: 16px; }
+  .modal-card { max-height: calc(100vh - 32px); }
 }
 
 @media (prefers-reduced-motion: reduce) {

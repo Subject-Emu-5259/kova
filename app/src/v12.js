@@ -1219,7 +1219,7 @@
     // the address is published.
     if (note && STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET") {
       note.textContent =
-        "The store review address isn't set yet — download your application below and send it once the address is published. Listings are approved by both Melo and Dre, and nothing appears in the store until both say yes.";
+        "The store review address isn't set yet — download your application below and send it once the address is published. Listings are reviewed by the Avok team — nothing appears in the store until it's approved.";
     }
     function field(id) {
       var input = document.getElementById(id);
@@ -1336,7 +1336,7 @@
         note.textContent =
           "Application downloaded as " +
           app.slug +
-          "-application.json. Send it to Avok for review — listings are approved by both Melo and Dre, and nothing appears in the store until both say yes. There is no automatic submission." +
+          "-application.json. Send it to Avok for review — listings are reviewed by the Avok team — nothing appears in the store until it's approved. There is no automatic submission." +
           (STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET"
             ? " The store review address isn't set yet; send the application once the address is published."
             : "");
@@ -1353,11 +1353,56 @@
             "Your mail client should have opened with the application pre-filled." +
             (STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET"
               ? " The store review address isn't set yet, so no recipient was filled in — add it once the address is published, or download the application instead."
-              : " Send it to Avok for review — listings are approved by both Melo and Dre.");
+              : " Send it to Avok for review — listings are reviewed by the Avok team.");
         }
         setStatus("Application opened in your mail client.", false);
       });
     }
+  }
+
+  // v1.3.2: the store application form lives in a modal behind
+  // the "Open application" button on the Store page. The form
+  // itself is static markup — closing only hides the modal, so
+  // everything typed stays put between opens.
+  function wireStoreSubmitModal() {
+    var modal = document.getElementById("store-submit-modal");
+    var openBtn = document.getElementById("store-submit-open-btn");
+    var closeBtn = document.getElementById("store-submit-close-btn");
+    if (!modal || !openBtn) return;
+    function isOpen() {
+      return !modal.hidden;
+    }
+    function open() {
+      modal.hidden = false;
+      var firstField = document.getElementById("store-submit-title");
+      if (firstField) firstField.focus();
+    }
+    function close() {
+      modal.hidden = true;
+      openBtn.focus();
+    }
+    openBtn.addEventListener("click", open);
+    if (closeBtn) closeBtn.addEventListener("click", close);
+    // Backdrop click: only when the click lands on the dimmed
+    // overlay itself, not on the card or anything inside it.
+    modal.addEventListener("click", function (event) {
+      if (event.target === modal) close();
+    });
+    // Escape closes the modal. Capture phase, so this runs
+    // before nav.js's bubble-phase keydown handler — otherwise
+    // nav would also fire its goBack on the same keypress.
+    window.addEventListener(
+      "keydown",
+      function (event) {
+        if (!isOpen()) return;
+        if (event.key !== "Escape") return;
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      },
+      true
+    );
   }
 
   // -------------------------------------------------- §10 big picture
@@ -2316,6 +2361,7 @@
       });
     }
     wireStoreSubmit();
+    wireStoreSubmitModal();
     wireStateBackup();
     wireOnboarding();
   }

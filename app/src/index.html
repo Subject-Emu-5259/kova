@@ -143,62 +143,15 @@
 
         <div class="section-head">
           <h2>Submit your game</h2>
-          <span class="section-sub">Listings are approved by Melo and Dre — nothing appears until both say yes</span>
+          <span class="section-sub">Listings are reviewed by the Avok team — nothing appears in the store until it's approved.</span>
         </div>
         <div class="settings-card">
           <p class="settings-note">
-            Fill in the application, then download it as a JSON file
-            or send it by email. There is no automatic submission —
-            a person reads every application.
+            Have a game to list? Fill in the application — a member
+            of the Avok team reviews every one.
           </p>
-          <div class="profile-field">
-            <label for="store-submit-title">Title</label>
-            <input id="store-submit-title" class="text-input" type="text" placeholder="Your game's title" maxlength="120" spellcheck="false" />
-          </div>
-          <div class="profile-field">
-            <label for="store-submit-description">Description</label>
-            <textarea id="store-submit-description" class="text-input store-submit-desc" placeholder="What is your game?" maxlength="1000"></textarea>
-          </div>
-          <div class="profile-field">
-            <label for="store-submit-genre">Genre</label>
-            <input id="store-submit-genre" class="text-input" type="text" placeholder="e.g. Puzzle, Life sim, Action RPG" maxlength="80" spellcheck="false" />
-          </div>
-          <div class="profile-field">
-            <label for="store-submit-art">Art URL (optional)</label>
-            <input id="store-submit-art" class="text-input" type="text" placeholder="https://…/your-game-art.jpg" spellcheck="false" />
-          </div>
-          <div class="profile-field">
-            <label for="store-submit-web">Web link</label>
-            <input id="store-submit-web" class="text-input" type="text" placeholder="https://… where players play your game in the browser" spellcheck="false" />
-          </div>
-          <div class="profile-field">
-            <label for="store-submit-file">File link</label>
-            <input id="store-submit-file" class="text-input" type="text" placeholder="https://… where players download your game (e.g. itch.io)" spellcheck="false" />
-          </div>
-          <div class="profile-field">
-            <label for="store-submit-reddit">Reddit link</label>
-            <input id="store-submit-reddit" class="text-input" type="text" placeholder="https://www.reddit.com/r/… where players play your game on Reddit" spellcheck="false" />
-          </div>
-          <div class="profile-field">
-            <label for="store-submit-timing">Timing</label>
-            <input id="store-submit-timing" class="text-input" type="text" placeholder="When should it be listed? e.g. as soon as approved" maxlength="120" spellcheck="false" />
-          </div>
-          <div class="profile-field">
-            <label for="store-submit-developer">Developer</label>
-            <input id="store-submit-developer" class="text-input" type="text" placeholder="Your studio or name" maxlength="120" spellcheck="false" />
-          </div>
-          <div class="profile-field">
-            <label for="store-submit-contact">Contact</label>
-            <input id="store-submit-contact" class="text-input" type="text" placeholder="Email or handle, so we can reach you" maxlength="120" spellcheck="false" />
-          </div>
-          <div class="profile-field">
-            <label for="store-submit-version">Version (optional)</label>
-            <input id="store-submit-version" class="text-input" type="text" placeholder="e.g. 1.0.0" maxlength="32" spellcheck="false" />
-          </div>
-          <p id="store-submit-note" class="profile-note"></p>
           <div class="settings-row">
-            <button id="store-submit-download-btn" type="button">Download application</button>
-            <button id="store-submit-email-btn" type="button">Send via email</button>
+            <button id="store-submit-open-btn" type="button">Open application</button>
           </div>
         </div>
       </section>
@@ -478,7 +431,7 @@
         <div class="settings-card">
           <h2>About</h2>
           <p class="settings-note">
-            KOVA by Avok Interactive · Version 1.3.1<br />
+            KOVA by Avok Interactive · Version 1.3.2<br />
             All your games. One system.
           </p>
         </div>
@@ -514,6 +467,74 @@
         <div class="settings-row onboarding-actions">
           <button id="onboarding-next" type="button">Continue</button>
           <button id="onboarding-skip" type="button" class="ghost">Skip for now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- v1.3.2 — store application form. Lives in a modal behind
+         the "Open application" button on the Store page instead of
+         sitting at the bottom of the page. Same overlay pattern as
+         onboarding; the form keeps its state between opens (the
+         modal is only hidden, never rebuilt or cleared). -->
+    <div id="store-submit-modal" class="app-modal" hidden>
+      <div class="app-modal-card" role="dialog" aria-labelledby="store-submit-modal-title">
+        <div class="app-modal-head">
+          <h2 id="store-submit-modal-title">Submit your game</h2>
+          <button id="store-submit-close-btn" class="app-modal-close" type="button" aria-label="Close application">✕</button>
+        </div>
+        <p class="settings-note">
+          Fill in the application, then download it as a JSON file
+          or send it by email. A member of the Avok team reviews
+          every application — there's no automatic submission.
+        </p>
+        <div class="profile-field">
+          <label for="store-submit-title">Title</label>
+          <input id="store-submit-title" class="text-input" type="text" placeholder="Your game's title" maxlength="120" spellcheck="false" />
+        </div>
+        <div class="profile-field">
+          <label for="store-submit-description">Description</label>
+          <textarea id="store-submit-description" class="text-input store-submit-desc" placeholder="What is your game?" maxlength="1000"></textarea>
+        </div>
+        <div class="profile-field">
+          <label for="store-submit-genre">Genre</label>
+          <input id="store-submit-genre" class="text-input" type="text" placeholder="e.g. Puzzle, Life sim, Action RPG" maxlength="80" spellcheck="false" />
+        </div>
+        <div class="profile-field">
+          <label for="store-submit-art">Art URL (optional)</label>
+          <input id="store-submit-art" class="text-input" type="text" placeholder="https://…/your-game-art.jpg" spellcheck="false" />
+        </div>
+        <div class="profile-field">
+          <label for="store-submit-web">Web link</label>
+          <input id="store-submit-web" class="text-input" type="text" placeholder="https://… where players play your game in the browser" spellcheck="false" />
+        </div>
+        <div class="profile-field">
+          <label for="store-submit-file">File link</label>
+          <input id="store-submit-file" class="text-input" type="text" placeholder="https://… where players download your game (e.g. itch.io)" spellcheck="false" />
+        </div>
+        <div class="profile-field">
+          <label for="store-submit-reddit">Reddit link</label>
+          <input id="store-submit-reddit" class="text-input" type="text" placeholder="https://www.reddit.com/r/… where players play your game on Reddit" spellcheck="false" />
+        </div>
+        <div class="profile-field">
+          <label for="store-submit-timing">Timing</label>
+          <input id="store-submit-timing" class="text-input" type="text" placeholder="When should it be listed? e.g. as soon as approved" maxlength="120" spellcheck="false" />
+        </div>
+        <div class="profile-field">
+          <label for="store-submit-developer">Developer</label>
+          <input id="store-submit-developer" class="text-input" type="text" placeholder="Your studio or name" maxlength="120" spellcheck="false" />
+        </div>
+        <div class="profile-field">
+          <label for="store-submit-contact">Contact</label>
+          <input id="store-submit-contact" class="text-input" type="text" placeholder="Email or handle, so we can reach you" maxlength="120" spellcheck="false" />
+        </div>
+        <div class="profile-field">
+          <label for="store-submit-version">Version (optional)</label>
+          <input id="store-submit-version" class="text-input" type="text" placeholder="e.g. 1.0.0" maxlength="32" spellcheck="false" />
+        </div>
+        <p id="store-submit-note" class="profile-note"></p>
+        <div class="settings-row">
+          <button id="store-submit-download-btn" type="button">Download application</button>
+          <button id="store-submit-email-btn" type="button">Send via email</button>
         </div>
       </div>
     </div>

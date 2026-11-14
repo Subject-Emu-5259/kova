@@ -78,7 +78,20 @@ window.KovaNav = (function () {
     var all = Array.prototype.slice.call(
       document.querySelectorAll(FOCUS_SELECTOR)
     );
-    return all.filter(isVisible);
+    var list = all.filter(isVisible);
+    // v1.3.2: when a modal is open, navigation stays inside it —
+    // focus must never slip to elements behind the overlay. Both
+    // shells hide their modals with the hidden attribute (classic
+    // .app-modal, beta .modal-overlay), so an un-hidden one is open.
+    var modal = document.querySelector(
+      ".app-modal:not([hidden]), .modal-overlay:not([hidden])"
+    );
+    if (modal && isVisible(modal)) {
+      list = list.filter(function (el) {
+        return modal.contains(el);
+      });
+    }
+    return list;
   }
 
   // Stable-ish identity for re-anchoring: tiles, rows, and cards
