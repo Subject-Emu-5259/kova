@@ -1,6 +1,6 @@
 [package]
 name = "kova-core"
-version = "1.2.1"
+version = "1.3.0"
 edition = "2021"
 description = "KOVA core library by Avok Interactive: unified Steam/Epic/GOG/itch/standalone library scanner plus the built-in Avok shelf (pure Rust, no GUI dependencies)."
 license = "MIT"

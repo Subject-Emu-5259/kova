@@ -1075,6 +1075,9 @@
 
   // ------------------------------------------------------- §8 store
 
+  // v1.3.0: Dre names the store review address in a follow-up; until then the email action opens with no recipient. Do not invent an address.
+  var STORE_REVIEW_ADDRESS = "REVIEW_ADDRESS_NOT_SET";
+
   var storeCatalogCache = null;
   var storeCatalogLoading = false;
 
@@ -1155,18 +1158,37 @@
         body.appendChild(el("p", "store-desc", listing.description));
       }
       var actions = el("div", "store-actions");
-      if (listing.download_url) {
-        var downloadBtn = el("button", "play", "Download");
-        downloadBtn.type = "button";
-        downloadBtn.addEventListener("click", function (event) {
+      // One button per platform the listing actually has, in
+      // Dre's locked order: web, file, reddit. A stale v1-shape
+      // catalog has no platforms at all, so the card just shows
+      // no platform buttons instead of crashing.
+      var platformButtons = [
+        ["web", "Play on Web"],
+        ["file", "Download"],
+        ["reddit", "Play on Reddit"],
+      ];
+      var platforms = listing.platforms || {};
+      var platformButtonsAdded = 0;
+      platformButtons.forEach(function (entry) {
+        var uri = platforms[entry[0]];
+        if (!uri) return;
+        var label = entry[1];
+        var platformBtn = el(
+          "button",
+          platformButtonsAdded === 0 ? "play" : "ghost",
+          label
+        );
+        platformButtonsAdded += 1;
+        platformBtn.type = "button";
+        platformBtn.addEventListener("click", function (event) {
           event.stopPropagation();
           if (!invoke) return;
-          invoke("launch_uri", { uri: listing.download_url }).catch(function (err) {
-            setStatus("Could not open the download link: " + err, true);
+          invoke("launch_uri", { uri: uri }).catch(function (err) {
+            setStatus("Could not open the link: " + err, true);
           });
         });
-        actions.appendChild(downloadBtn);
-      }
+        actions.appendChild(platformBtn);
+      });
       // Wishlist tie-in for Avok games: the catalog id matches
       // the library key ("avok:<id>") for Dispatch HQ and The
       // Open World.
@@ -1189,55 +1211,153 @@
 
   function wireStoreSubmit() {
     var downloadBtn = document.getElementById("store-submit-download-btn");
+    var emailBtn = document.getElementById("store-submit-email-btn");
     if (!downloadBtn) return;
-    downloadBtn.addEventListener("click", function () {
-      var title = (document.getElementById("store-submit-title").value || "").trim();
-      var art = (document.getElementById("store-submit-art").value || "").trim();
-      var description = (document.getElementById("store-submit-description").value || "").trim();
-      var downloadUrl = (document.getElementById("store-submit-download").value || "").trim();
-      var developer = (document.getElementById("store-submit-developer").value || "").trim();
-      var version = (document.getElementById("store-submit-version").value || "").trim();
-      var note = document.getElementById("store-submit-note");
-      function fail(message) {
-        if (note) note.textContent = message;
-        setStatus(message, true);
-      }
+    var note = document.getElementById("store-submit-note");
+    // The review address isn't named yet: say so up front so a
+    // dev knows to download the application and send it once
+    // the address is published.
+    if (note && STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET") {
+      note.textContent =
+        "The store review address isn't set yet — download your application below and send it once the address is published. Listings are approved by both Melo and Dre, and nothing appears in the store until both say yes.";
+    }
+    function field(id) {
+      var input = document.getElementById(id);
+      return input ? (input.value || "").trim() : "";
+    }
+    function fail(message) {
+      if (note) note.textContent = message;
+      setStatus(message, true);
+      return null;
+    }
+    // Validate the form and build the application package, or
+    // return null (with the failure already shown).
+    function buildApplication() {
+      var title = field("store-submit-title");
+      var description = field("store-submit-description");
+      var genre = field("store-submit-genre");
+      var art = field("store-submit-art");
+      var web = field("store-submit-web");
+      var file = field("store-submit-file");
+      var reddit = field("store-submit-reddit");
+      var timing = field("store-submit-timing");
+      var developer = field("store-submit-developer");
+      var contact = field("store-submit-contact");
+      var version = field("store-submit-version") || "1.0.0";
       if (!title) return fail("A title is required.");
-      if (!art || !isHttpUrl(art)) return fail("Art needs a full http(s) URL.");
       if (!description) return fail("A description is required.");
-      if (!downloadUrl || !isHttpUrl(downloadUrl)) {
-        return fail("The download link needs a full http(s) URL.");
+      if (!genre) return fail("A genre is required.");
+      if (art && !isHttpUrl(art)) {
+        return fail("The art URL needs a full http(s) URL, if given.");
       }
+      if (!web && !file && !reddit) {
+        return fail("At least one platform link is required.");
+      }
+      if (web && !isHttpUrl(web)) {
+        return fail("The web link needs a full http(s) URL.");
+      }
+      if (file && !isHttpUrl(file)) {
+        return fail("The file link needs a full http(s) URL.");
+      }
+      if (reddit && !isHttpUrl(reddit)) {
+        return fail("The Reddit link needs a full http(s) URL.");
+      }
+      if (!timing) return fail("A release timing is required.");
       if (!developer) return fail("A developer name is required.");
-      if (!version) return fail("A version is required.");
+      if (!contact) return fail("A contact is required.");
       var slug = title
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
       if (!slug) return fail("The title needs at least one letter or number.");
-      var listing = {
-        id: slug,
-        title: title,
-        description: description,
-        art: art,
-        download_url: downloadUrl,
-        developer: developer,
-        free: true,
-        version: version,
+      var platforms = {};
+      if (web) platforms.web = web;
+      if (file) platforms.file = file;
+      if (reddit) platforms.reddit = reddit;
+      return {
+        slug: slug,
+        pkg: {
+          kind: "kova-store-application",
+          application_version: 1,
+          id: slug,
+          title: title,
+          description: description,
+          genre: genre,
+          art: art || null,
+          platforms: platforms,
+          developer: developer,
+          contact: contact,
+          timing: timing,
+          free: true,
+          version: version,
+        },
       };
+    }
+    function applicationMailto(app) {
+      var pkg = app.pkg;
+      var lines = [
+        "KOVA Store application",
+        "",
+        "Title: " + pkg.title,
+        "Developer: " + pkg.developer,
+        "Contact: " + pkg.contact,
+        "Genre: " + pkg.genre,
+        "Timing: " + pkg.timing,
+        "Version: " + pkg.version,
+        "Description: " +
+          (pkg.description.length > 300
+            ? pkg.description.slice(0, 300) + "…"
+            : pkg.description),
+      ];
+      if (pkg.platforms.web) lines.push("Web: " + pkg.platforms.web);
+      if (pkg.platforms.file) lines.push("File: " + pkg.platforms.file);
+      if (pkg.platforms.reddit) lines.push("Reddit: " + pkg.platforms.reddit);
+      if (pkg.art) lines.push("Art: " + pkg.art);
+      return (
+        "mailto:" +
+        (STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET"
+          ? ""
+          : STORE_REVIEW_ADDRESS) +
+        "?subject=" +
+        encodeURIComponent("KOVA Store application: " + pkg.title) +
+        "&body=" +
+        encodeURIComponent(lines.join("\n"))
+      );
+    }
+    downloadBtn.addEventListener("click", function () {
+      var app = buildApplication();
+      if (!app) return;
       downloadText(
-        JSON.stringify(listing, null, 2) + "\n",
-        slug + "-listing.json",
+        JSON.stringify(app.pkg, null, 2) + "\n",
+        app.slug + "-application.json",
         "application/json"
       );
       if (note) {
         note.textContent =
-          "Listing downloaded as " +
-          slug +
-          "-listing.json. Send it to Avok for review — listings are approved by Melo and Dre, and nothing appears in the store until both say yes. There is no automatic submission.";
+          "Application downloaded as " +
+          app.slug +
+          "-application.json. Send it to Avok for review — listings are approved by both Melo and Dre, and nothing appears in the store until both say yes. There is no automatic submission." +
+          (STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET"
+            ? " The store review address isn't set yet; send the application once the address is published."
+            : "");
       }
-      setStatus("Listing JSON downloaded.", false);
+      setStatus("Application JSON downloaded.", false);
     });
+    if (emailBtn) {
+      emailBtn.addEventListener("click", function () {
+        var app = buildApplication();
+        if (!app) return;
+        window.open(applicationMailto(app), "_self");
+        if (note) {
+          note.textContent =
+            "Your mail client should have opened with the application pre-filled." +
+            (STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET"
+              ? " The store review address isn't set yet, so no recipient was filled in — add it once the address is published, or download the application instead."
+              : " Send it to Avok for review — listings are approved by both Melo and Dre.");
+        }
+        setStatus("Application opened in your mail client.", false);
+      });
+    }
   }
 
   // -------------------------------------------------- §10 big picture

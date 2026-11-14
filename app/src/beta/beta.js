@@ -256,18 +256,26 @@ const DEMO_LIBRARY = {
 const DEMO_CATALOG = {
   source: "bundled",
   catalog: {
-    version: 1,
+    version: 2,
     listings: [
       {
         id: "dispatch-hq", title: "Dispatch HQ",
         description: "Run the city's emergency services from the dispatch desk: fire, police, and EMS. Every call is a decision, and every decision has a consequence.",
-        art: null, download_url: "https://dispatch-hq.onrender.com",
-        developer: "Avok Interactive", free: true, version: "0.55.0",
+        art: null,
+        platforms: {
+          web: "https://dispatch-hq.onrender.com",
+          file: "https://avok-interactive.itch.io/dispatch-hq",
+          reddit: "https://www.reddit.com/r/DispatchHQ/",
+        },
+        developer: "Avok Interactive", free: true, version: "0.56.0",
       },
       {
         id: "the-open-world", title: "The Open World",
         description: "A life sim that lives on Reddit. Build a life, earn, explore, and shape a world other players share.",
-        art: null, download_url: "https://www.reddit.com/r/The_Open_World/",
+        art: null,
+        platforms: {
+          reddit: "https://www.reddit.com/r/The_Open_World/",
+        },
         developer: "Avok Interactive", free: true, version: "0.108.29",
       },
     ],
@@ -366,7 +374,7 @@ function demoCall(cmd, args) {
     case "import_state":
       return Promise.resolve(JSON.parse(JSON.stringify(DEMO_STATE)));
     case "check_update":
-      return Promise.resolve({ available: false, version: null, current_version: "1.2.1", notes: null });
+      return Promise.resolve({ available: false, version: null, current_version: "1.3.0", notes: null });
     case "launch_game":
     case "launch_uri":
     case "notify_update_available":
@@ -493,6 +501,16 @@ function slugify(text) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 48);
+}
+
+// True only for absolute http(s) URLs — the store form's link check.
+function isHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch (err) {
+    return false;
+  }
 }
 
 // Downscale an uploaded image on a canvas until its data URL fits
@@ -2098,10 +2116,15 @@ async function renderDetailSaves(root, game) {
 
 // ------------------------------------------------------------------- store
 // One question: "What's new to play, free, from devs I can trust?"
-// Phase A: curated listings, downloads from the dev's own link.
+// Phase A: curated listings, each with its own per-platform links
+// (web / file / reddit) to the dev's own pages.
 // The catalog may be the live feed or the bundled offline copy —
-// the screen says which. The submission form generates a listing
-// JSON download; there is no invented endpoint.
+// the screen says which. The submission form builds a store
+// application the dev downloads as JSON or sends by email; there
+// is no invented endpoint.
+
+// v1.3.0: Dre names the store review address in a follow-up; until then the email action opens with no recipient. Do not invent an address.
+const STORE_REVIEW_ADDRESS = "REVIEW_ADDRESS_NOT_SET";
 
 async function renderStore() {
   const root = views.store;
@@ -2109,7 +2132,7 @@ async function renderStore() {
   titleRow(
     root,
     "Store",
-    "Free games from independent devs. Downloads go to the dev's own page. KOVA does not host game files yet."
+    "Free games from independent devs. Play on the web, download the PC build, or play on Reddit — every link goes to the dev's own page. KOVA does not host game files yet."
   );
   if (!catalogData) {
     catalogData = await call("get_store_catalog");
@@ -2173,17 +2196,31 @@ async function renderStore() {
       body.appendChild(el("div", "sc-desc", listing.description || ""));
       const actions = el("div", "sc-actions");
       if (listing.free) actions.appendChild(el("span", "free-pill", "Free"));
-      const getBtn = el("button", "btn btn-primary", "Get it free");
-      getBtn.type = "button";
-      getBtn.addEventListener("click", async () => {
-        if (!invoke) {
-          window.open(listing.download_url, "_blank", "noopener");
-          return;
-        }
-        const opened = await call("launch_uri", { uri: listing.download_url });
-        if (opened === null && !DEMO) setStatus("Could not open that download page.", true);
+      // One button per platform the listing actually has, in web /
+      // file / reddit order. The first is the filled action; the
+      // rest are plain buttons so the card keeps one loud action.
+      const platforms = listing.platforms || {};
+      let firstPlatform = true;
+      [
+        ["web", "Play on Web"],
+        ["file", "Download"],
+        ["reddit", "Play on Reddit"],
+      ].forEach(([key, label]) => {
+        const uri = platforms[key];
+        if (!uri) return;
+        const btn = el("button", "btn" + (firstPlatform ? " btn-primary" : ""), label);
+        firstPlatform = false;
+        btn.type = "button";
+        btn.addEventListener("click", async () => {
+          if (!invoke) {
+            window.open(uri, "_blank", "noopener");
+            return;
+          }
+          const opened = await call("launch_uri", { uri });
+          if (opened === null && !DEMO) setStatus("Could not open that page.", true);
+        });
+        actions.appendChild(btn);
       });
-      actions.appendChild(getBtn);
       body.appendChild(actions);
       card.appendChild(body);
       grid.appendChild(card);
@@ -2191,7 +2228,8 @@ async function renderStore() {
     root.appendChild(grid);
   }
 
-  // Submission form — generates a listing JSON download.
+  // Submission form — builds a store application package the dev
+  // downloads as JSON or sends by email. No endpoint exists yet.
   const submitSection = el("div", "view-section");
   submitSection.style.marginTop = "32px";
   submitSection.appendChild(el("div", "section-head")).appendChild(el("h2", null, "Submit your game"));
@@ -2200,17 +2238,26 @@ async function renderStore() {
     el(
       "p",
       "card-sub",
-      "Free games only, for now. Fill in your game's page and download the listing file, then send it to Avok. It goes through review before it appears in the store. Listings are approved by both Melo and Dre."
+      "Free games only, for now. Tell us what your game is, where it lives, and when you want it listed, then download the application or send it by email. It goes through review before it appears in the store. Listings are approved by both Melo and Dre."
     )
   );
+  if (STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET") {
+    const reviewNote = el(
+      "div",
+      "notice",
+      "The store review address isn't set yet. Download your application below and send it once the address is published — the email button will open with no recipient until then."
+    );
+    reviewNote.style.marginBottom = "16px";
+    submitCard.appendChild(reviewNote);
+  }
   const form = el("div");
   const fields = {};
-  [
-    ["title", "Game title", "text", "e.g. Tiny Rogue"],
-    ["developer", "Developer or studio", "text", "e.g. Avok Interactive"],
-    ["version", "Version", "text", "e.g. 1.0.0"],
-    ["download_url", "Download link", "url", "https://your-site-or-itch-page"],
-  ].forEach(([key, label, type, placeholder]) => {
+  function addGroup(title) {
+    const head = el("h3", null, title);
+    head.style.marginTop = "24px";
+    form.appendChild(head);
+  }
+  function addField(key, label, type, placeholder, hint) {
     const field = el("div", "field");
     field.style.marginTop = "16px";
     field.appendChild(el("label", null, label));
@@ -2220,8 +2267,13 @@ async function renderStore() {
     input.setAttribute("aria-label", label);
     fields[key] = input;
     field.appendChild(input);
+    if (hint) field.appendChild(el("div", "hint", hint));
     form.appendChild(field);
-  });
+  }
+  // WHAT: the game itself.
+  addGroup("What is the game");
+  addField("title", "Game title", "text", "e.g. Tiny Rogue");
+  addField("genre", "Genre", "text", "e.g. Roguelike deckbuilder");
   const descField = el("div", "field");
   descField.style.marginTop = "16px";
   descField.appendChild(el("label", null, "Description"));
@@ -2232,35 +2284,127 @@ async function renderStore() {
   fields.description = descInput;
   descField.appendChild(descInput);
   form.appendChild(descField);
+  addField("art", "Art URL", "url", "https://…", "Optional. A cover image for your listing.");
+  addField("version", "Version", "text", "e.g. 1.0.0", "Optional. Defaults to 1.0.0.");
+  // WHERE: at least one platform link.
+  addGroup("Where does it live");
+  addField("web", "Web link", "url", "https://…", "At least one of the three links is required.");
+  addField("file", "File link", "url", "https://…", "The PC download, e.g. your itch.io page.");
+  addField("reddit", "Reddit link", "url", "https://www.reddit.com/r/…");
+  // WHEN: wanted list / release timing.
+  addGroup("When do you want it listed");
+  addField("timing", "Timing", "text", "e.g. As soon as it's approved");
+  // WHO: the developer.
+  addGroup("Who are you");
+  addField("developer", "Developer name", "text", "e.g. Avok Interactive");
+  addField("contact", "Contact", "text", "e.g. you@example.com");
   submitCard.appendChild(form);
-  const submitActions = el("div", "card-actions");
-  const downloadBtn = el("button", "btn btn-primary", "Download listing JSON");
-  downloadBtn.type = "button";
-  downloadBtn.addEventListener("click", () => {
+
+  // Validates the form and returns the application package, or
+  // null after reporting the first problem.
+  function collectApplication() {
     const title = fields.title.value.trim();
+    const description = fields.description.value.trim();
+    const genre = fields.genre.value.trim();
     const developer = fields.developer.value.trim();
-    const downloadUrl = fields.download_url.value.trim();
-    if (!title || !developer || !downloadUrl) {
-      setStatus("A title, a developer, and a download link are all required.", true);
-      return;
+    const contact = fields.contact.value.trim();
+    const timing = fields.timing.value.trim();
+    const art = fields.art.value.trim();
+    const web = fields.web.value.trim();
+    const file = fields.file.value.trim();
+    const reddit = fields.reddit.value.trim();
+    const version = fields.version.value.trim() || "1.0.0";
+    if (!title || !description || !genre || !developer || !contact || !timing) {
+      setStatus("A title, description, genre, developer, contact, and timing are all required.", true);
+      return null;
     }
-    const listing = {
+    if (!web && !file && !reddit) {
+      setStatus("At least one platform link is required: web, file, or reddit.", true);
+      return null;
+    }
+    const links = [
+      ["web link", web],
+      ["file link", file],
+      ["reddit link", reddit],
+      ["art URL", art],
+    ];
+    for (const [label, value] of links) {
+      if (value && !isHttpUrl(value)) {
+        setStatus("That " + label + " is not a valid http(s) URL.", true);
+        return null;
+      }
+    }
+    const platforms = {};
+    if (web) platforms.web = web;
+    if (file) platforms.file = file;
+    if (reddit) platforms.reddit = reddit;
+    return {
+      kind: "kova-store-application",
+      application_version: 1,
       id: slugify(title) || "untitled",
       title,
-      description: fields.description.value.trim(),
-      art: null,
-      download_url: downloadUrl,
+      description,
+      genre,
+      art: art || null,
+      platforms,
       developer,
+      contact,
+      timing,
       free: true,
-      version: fields.version.value.trim() || "1.0.0",
+      version,
     };
-    downloadFile(
-      "kova-store-listing-" + listing.id + ".json",
-      JSON.stringify(listing, null, 2) + "\n"
+  }
+
+  // The application as a mailto: pre-filled plain text. With no
+  // review address named yet, the recipient is left blank.
+  function applicationMailto(app) {
+    const lines = [
+      "Title: " + app.title,
+      "Developer: " + app.developer,
+      "Contact: " + app.contact,
+      "Genre: " + app.genre,
+      "Timing: " + app.timing,
+      "Version: " + app.version,
+      "",
+      "Description: " + app.description.slice(0, 300),
+    ];
+    if (app.platforms.web) lines.push("Web: " + app.platforms.web);
+    if (app.platforms.file) lines.push("File: " + app.platforms.file);
+    if (app.platforms.reddit) lines.push("Reddit: " + app.platforms.reddit);
+    if (app.art) lines.push("Art: " + app.art);
+    const address =
+      STORE_REVIEW_ADDRESS === "REVIEW_ADDRESS_NOT_SET" ? "" : STORE_REVIEW_ADDRESS;
+    return (
+      "mailto:" +
+      address +
+      "?subject=" +
+      encodeURIComponent("KOVA Store application: " + app.title) +
+      "&body=" +
+      encodeURIComponent(lines.join("\n"))
     );
-    setStatus("Listing JSON downloaded. Send it to Avok for review.");
+  }
+
+  const submitActions = el("div", "card-actions");
+  const downloadBtn = el("button", "btn btn-primary", "Download application");
+  downloadBtn.type = "button";
+  downloadBtn.addEventListener("click", () => {
+    const app = collectApplication();
+    if (!app) return;
+    downloadFile(
+      "kova-store-application-" + app.id + ".json",
+      JSON.stringify(app, null, 2) + "\n"
+    );
+    setStatus("Application downloaded. Send it to Avok for review.");
+  });
+  const emailBtn = el("button", "btn", "Send via email");
+  emailBtn.type = "button";
+  emailBtn.addEventListener("click", () => {
+    const app = collectApplication();
+    if (!app) return;
+    window.open(applicationMailto(app), "_self");
   });
   submitActions.appendChild(downloadBtn);
+  submitActions.appendChild(emailBtn);
   submitCard.appendChild(submitActions);
   submitSection.appendChild(submitCard);
   root.appendChild(submitSection);

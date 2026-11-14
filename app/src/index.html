@@ -147,37 +147,58 @@
         </div>
         <div class="settings-card">
           <p class="settings-note">
-            Fill in your game's page, then download the listing as a
-            JSON file and send it to Avok for review. There is no
-            automatic submission — a person reads every listing.
+            Fill in the application, then download it as a JSON file
+            or send it by email. There is no automatic submission —
+            a person reads every application.
           </p>
           <div class="profile-field">
             <label for="store-submit-title">Title</label>
             <input id="store-submit-title" class="text-input" type="text" placeholder="Your game's title" maxlength="120" spellcheck="false" />
           </div>
           <div class="profile-field">
-            <label for="store-submit-art">Art URL</label>
-            <input id="store-submit-art" class="text-input" type="text" placeholder="https://…/your-game-art.jpg" spellcheck="false" />
-          </div>
-          <div class="profile-field">
             <label for="store-submit-description">Description</label>
             <textarea id="store-submit-description" class="text-input store-submit-desc" placeholder="What is your game?" maxlength="1000"></textarea>
           </div>
           <div class="profile-field">
-            <label for="store-submit-download">Download link</label>
-            <input id="store-submit-download" class="text-input" type="text" placeholder="https://… where players download your game" spellcheck="false" />
+            <label for="store-submit-genre">Genre</label>
+            <input id="store-submit-genre" class="text-input" type="text" placeholder="e.g. Puzzle, Life sim, Action RPG" maxlength="80" spellcheck="false" />
+          </div>
+          <div class="profile-field">
+            <label for="store-submit-art">Art URL (optional)</label>
+            <input id="store-submit-art" class="text-input" type="text" placeholder="https://…/your-game-art.jpg" spellcheck="false" />
+          </div>
+          <div class="profile-field">
+            <label for="store-submit-web">Web link</label>
+            <input id="store-submit-web" class="text-input" type="text" placeholder="https://… where players play your game in the browser" spellcheck="false" />
+          </div>
+          <div class="profile-field">
+            <label for="store-submit-file">File link</label>
+            <input id="store-submit-file" class="text-input" type="text" placeholder="https://… where players download your game (e.g. itch.io)" spellcheck="false" />
+          </div>
+          <div class="profile-field">
+            <label for="store-submit-reddit">Reddit link</label>
+            <input id="store-submit-reddit" class="text-input" type="text" placeholder="https://www.reddit.com/r/… where players play your game on Reddit" spellcheck="false" />
+          </div>
+          <div class="profile-field">
+            <label for="store-submit-timing">Timing</label>
+            <input id="store-submit-timing" class="text-input" type="text" placeholder="When should it be listed? e.g. as soon as approved" maxlength="120" spellcheck="false" />
           </div>
           <div class="profile-field">
             <label for="store-submit-developer">Developer</label>
             <input id="store-submit-developer" class="text-input" type="text" placeholder="Your studio or name" maxlength="120" spellcheck="false" />
           </div>
           <div class="profile-field">
-            <label for="store-submit-version">Version</label>
+            <label for="store-submit-contact">Contact</label>
+            <input id="store-submit-contact" class="text-input" type="text" placeholder="Email or handle, so we can reach you" maxlength="120" spellcheck="false" />
+          </div>
+          <div class="profile-field">
+            <label for="store-submit-version">Version (optional)</label>
             <input id="store-submit-version" class="text-input" type="text" placeholder="e.g. 1.0.0" maxlength="32" spellcheck="false" />
           </div>
           <p id="store-submit-note" class="profile-note"></p>
           <div class="settings-row">
-            <button id="store-submit-download-btn" type="button">Download listing JSON</button>
+            <button id="store-submit-download-btn" type="button">Download application</button>
+            <button id="store-submit-email-btn" type="button">Send via email</button>
           </div>
         </div>
       </section>
@@ -457,7 +478,7 @@
         <div class="settings-card">
           <h2>About</h2>
           <p class="settings-note">
-            KOVA by Avok Interactive · Version 1.2.1<br />
+            KOVA by Avok Interactive · Version 1.3.0<br />
             All your games. One system.
           </p>
         </div>

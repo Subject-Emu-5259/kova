@@ -1432,10 +1432,12 @@ const STORE_CATALOG_URL: &str = "https://kova-99837.wasmer.app/store/catalog.jso
 /// this long before falling back to the bundled catalog.
 const STORE_CATALOG_TIMEOUT_SECS: u64 = 10;
 
-/// One store listing. `download_url` is the dev's own link —
-/// KOVA does not host game files in Phase A. `art` is `None`
-/// when a listing carries no art, and the UI falls back to the
-/// in-app Avok art.
+/// One store listing. `platforms` carries the dev's own links —
+/// KOVA does not host game files in Phase A. A platform key is
+/// present ONLY when that version exists and is public: `web`
+/// (play in the browser), `file` (the PC download), `reddit`
+/// (play on Reddit). `art` is `None` when a listing carries no
+/// art, and the UI falls back to the in-app Avok art.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct StoreListing {
     id: String,
@@ -1443,10 +1445,27 @@ struct StoreListing {
     description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     art: Option<String>,
-    download_url: String,
+    /// `#[serde(default)]` so a stale v1-shape catalog still
+    /// parses — the listing just shows no platform buttons
+    /// rather than crashing the store.
+    #[serde(default)]
+    platforms: StorePlatforms,
     developer: String,
     free: bool,
     version: String,
+}
+
+/// Where a listing can be played. Each slot is `None` unless
+/// that version exists and is public. The field names are
+/// Dre's locked words: web / file / reddit.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct StorePlatforms {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    web: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reddit: Option<String>,
 }
 
 /// The catalog file's shape: a schema version plus the listings.
@@ -1466,12 +1485,13 @@ struct StoreCatalogResponse {
 }
 
 /// The bundled fallback catalog: Avok's own two titles, with the
-/// SAME names, descriptions, and download URLs the app already
+/// SAME names, descriptions, and platform links the app already
 /// uses for the Avok shelf (`AVOK_GAME_INFO` in main.js and the
-/// launch URIs in `kova_core::avok`). No URL is invented here.
+/// launch URIs in `kova_core::avok`). No URL is invented here —
+/// the itch.io file link is the verified live page.
 fn bundled_store_catalog() -> StoreCatalog {
     StoreCatalog {
-        version: 1,
+        version: 2,
         listings: vec![
             StoreListing {
                 id: "dispatch-hq".to_string(),
@@ -1479,10 +1499,14 @@ fn bundled_store_catalog() -> StoreCatalog {
                 description: "Run the city's emergency services from the dispatch desk — fire, police, and EMS. Every call is a decision, and every decision has a consequence."
                     .to_string(),
                 art: Some("https://kova-99837.wasmer.app/assets/dispatch-hq.jpg".to_string()),
-                download_url: "https://dispatch-hq.onrender.com".to_string(),
+                platforms: StorePlatforms {
+                    web: Some("https://dispatch-hq.onrender.com".to_string()),
+                    file: Some("https://avok-interactive.itch.io/dispatch-hq".to_string()),
+                    reddit: Some("https://www.reddit.com/r/DispatchHQ/".to_string()),
+                },
                 developer: "Avok Interactive".to_string(),
                 free: true,
-                version: "0.55.0".to_string(),
+                version: "0.56.0".to_string(),
             },
             StoreListing {
                 id: "the-open-world".to_string(),
@@ -1490,7 +1514,11 @@ fn bundled_store_catalog() -> StoreCatalog {
                 description: "A life sim that lives on Reddit — build a life, earn, explore, and shape a world other players share."
                     .to_string(),
                 art: Some("https://kova-99837.wasmer.app/assets/open-world.jpg".to_string()),
-                download_url: "https://www.reddit.com/r/The_Open_World/".to_string(),
+                platforms: StorePlatforms {
+                    web: None,
+                    file: None,
+                    reddit: Some("https://www.reddit.com/r/The_Open_World/".to_string()),
+                },
                 developer: "Avok Interactive".to_string(),
                 free: true,
                 version: "0.108.29".to_string(),
