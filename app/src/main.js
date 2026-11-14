@@ -2069,9 +2069,12 @@ let pendingUpdateVersion = null;
 // feed's notes still drive the available-update display. Bump
 // APP_VERSION with each release and add its notes at the top of
 // RELEASE_ORDER.
-const APP_VERSION = "1.3.0";
-const RELEASE_ORDER = ["1.3.0", "1.2.1", "1.2.0"];
+const APP_VERSION = "1.3.1";
+const RELEASE_ORDER = ["1.3.1", "1.3.0", "1.2.1", "1.2.0"];
 const RELEASE_NOTES = {
+  "1.3.1": [
+    "Dev applications now send to the review inbox — the email button works.",
+  ],
   "1.3.0": [
     "The Game Store now shows every way to play each game — web, file, and Reddit — with one action per platform. Dispatch HQ is on all three.",
     "The dev application is real now: what your game is, where it plays, when you want it listed, and who you are — reviewed by Melo and Dre before anything appears.",

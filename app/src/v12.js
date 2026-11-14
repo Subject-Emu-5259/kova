@@ -1075,8 +1075,8 @@
 
   // ------------------------------------------------------- §8 store
 
-  // v1.3.0: Dre names the store review address in a follow-up; until then the email action opens with no recipient. Do not invent an address.
-  var STORE_REVIEW_ADDRESS = "REVIEW_ADDRESS_NOT_SET";
+  // v1.3.1: Dre named the store review address — his Gmail.
+  var STORE_REVIEW_ADDRESS = "deandrewh26@gmail.com";
 
   var storeCatalogCache = null;
   var storeCatalogLoading = false;
