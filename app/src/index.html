@@ -2,12 +2,47 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- v1.2.0 §11 — shell boot contract. Runs before the classic
+         app renders: when the player opted into the beta AND picked
+         the beta UI, this window hands off to the beta shell. The
+         beta shell carries the reverse guard. A brief flash of the
+         classic UI on beta startup is acceptable. If Tauri is not
+         available (or the state cannot be read), classic renders. -->
+    <script>
+      (function () {
+        function bootCheck() {
+          try {
+            var core = window.__TAURI__ && window.__TAURI__.core;
+            if (!core || !core.invoke) return;
+            core.invoke("get_state").then(function (state) {
+              if (
+                state &&
+                state.beta &&
+                state.beta.opted_in &&
+                state.beta.ui === "beta"
+              ) {
+                window.location.replace("beta/index.html");
+              }
+            }).catch(function () {});
+          } catch (err) {
+            /* classic renders */
+          }
+        }
+        bootCheck();
+        // If the Tauri bridge was not injected yet at parse time,
+        // one more check once the document is ready.
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", bootCheck);
+        }
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KOVA — Avok Interactive</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="logo-asset.js" defer></script>
     <script src="nav.js" defer></script>
     <script src="main.js" defer></script>
+    <script src="v12.js" defer></script>
   </head>
   <body>
     <header class="topbar">
@@ -19,6 +54,7 @@
       <nav class="tabs" aria-label="KOVA views">
         <button class="tab active" type="button" data-view="home">Home</button>
         <button class="tab" type="button" data-view="library">Library</button>
+        <button class="tab" type="button" data-view="store">Store</button>
         <button class="tab" type="button" data-view="profile">Profile</button>
         <button class="tab" type="button" data-view="settings">Settings<span id="update-badge" class="update-badge" hidden></span></button>
       </nav>
@@ -29,11 +65,17 @@
     </header>
 
     <div id="status" class="status-bar" hidden></div>
+    <div id="session-banner" class="session-banner" hidden></div>
 
     <main>
       <!-- ===================== HOME ===================== -->
       <section id="view-home" class="view">
         <div id="hero"></div>
+
+        <div class="big-picture-row">
+          <button id="big-picture-open" class="ghost" type="button">Big Picture mode</button>
+          <span class="section-sub">Fullscreen, controller-only — press Y on a controller to toggle</span>
+        </div>
 
         <div class="section-head">
           <h2>Quick Resume</h2>
@@ -65,6 +107,7 @@
       <!-- ===================== LIBRARY ===================== -->
       <section id="view-library" class="view" hidden>
         <h1 class="view-title">Library</h1>
+        <div id="kids-banner" class="kids-banner" hidden></div>
         <section id="summary" class="summary" hidden></section>
         <div class="library-controls">
           <input
@@ -87,10 +130,81 @@
         <p id="grid-empty" class="empty-note" hidden></p>
       </section>
 
+      <!-- ===================== STORE ===================== -->
+      <section id="view-store" class="view" hidden>
+        <h1 class="view-title">Game Store</h1>
+        <p class="settings-note">
+          Free games from developers, listed by KOVA. Downloads go to
+          the developer's own hosting — KOVA doesn't host game files
+          yet. Paid games are future work, not this release.
+        </p>
+        <p id="store-source" class="settings-note" hidden></p>
+        <div id="store-list" class="store-grid"></div>
+
+        <div class="section-head">
+          <h2>Submit your game</h2>
+          <span class="section-sub">Listings are approved by Melo and Dre — nothing appears until both say yes</span>
+        </div>
+        <div class="settings-card">
+          <p class="settings-note">
+            Fill in your game's page, then download the listing as a
+            JSON file and send it to Avok for review. There is no
+            automatic submission — a person reads every listing.
+          </p>
+          <div class="profile-field">
+            <label for="store-submit-title">Title</label>
+            <input id="store-submit-title" class="text-input" type="text" placeholder="Your game's title" maxlength="120" spellcheck="false" />
+          </div>
+          <div class="profile-field">
+            <label for="store-submit-art">Art URL</label>
+            <input id="store-submit-art" class="text-input" type="text" placeholder="https://…/your-game-art.jpg" spellcheck="false" />
+          </div>
+          <div class="profile-field">
+            <label for="store-submit-description">Description</label>
+            <textarea id="store-submit-description" class="text-input store-submit-desc" placeholder="What is your game?" maxlength="1000"></textarea>
+          </div>
+          <div class="profile-field">
+            <label for="store-submit-download">Download link</label>
+            <input id="store-submit-download" class="text-input" type="text" placeholder="https://… where players download your game" spellcheck="false" />
+          </div>
+          <div class="profile-field">
+            <label for="store-submit-developer">Developer</label>
+            <input id="store-submit-developer" class="text-input" type="text" placeholder="Your studio or name" maxlength="120" spellcheck="false" />
+          </div>
+          <div class="profile-field">
+            <label for="store-submit-version">Version</label>
+            <input id="store-submit-version" class="text-input" type="text" placeholder="e.g. 1.0.0" maxlength="32" spellcheck="false" />
+          </div>
+          <p id="store-submit-note" class="profile-note"></p>
+          <div class="settings-row">
+            <button id="store-submit-download-btn" type="button">Download listing JSON</button>
+          </div>
+        </div>
+      </section>
+
       <!-- ===================== PROFILE ===================== -->
       <section id="view-profile" class="view" hidden>
         <div id="profile-header" class="profile-header"></div>
         <div id="profile-stats" class="stats-strip" role="list" aria-label="Your KOVA stats"></div>
+        <p class="profile-note profile-playtime-note">Playtime counts only games launched from KOVA.</p>
+
+        <div class="section-head">
+          <h2>Recent sessions</h2>
+          <span class="section-sub">Your latest completed sessions</span>
+        </div>
+        <div id="profile-sessions"></div>
+
+        <div class="section-head">
+          <h2>Library stats</h2>
+          <span class="section-sub">Totals by source, and your shelf</span>
+        </div>
+        <div id="profile-library-stats"></div>
+
+        <div class="section-head">
+          <h2>Milestones</h2>
+          <span class="section-sub">Badges from your own history — no server, just your play</span>
+        </div>
+        <div id="profile-milestones"></div>
 
         <div class="section-head">
           <h2>Recently played</h2>
@@ -237,18 +351,113 @@
         </div>
 
         <div class="settings-card">
+          <h2>Collections</h2>
+          <p class="settings-note">
+            Shelves beyond Favorites: Playing now, Backlog, Finished,
+            plus your own. A game can sit on more than one shelf —
+            assign games from their game page.
+          </p>
+          <div id="shelves-manage"></div>
+          <div class="settings-row">
+            <input
+              id="shelf-new-name"
+              class="text-input"
+              type="text"
+              placeholder="New shelf name"
+              maxlength="40"
+              spellcheck="false"
+            />
+            <button id="shelf-create" type="button">Create shelf</button>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h2>Kids shelf</h2>
+          <p class="settings-note">
+            When the Kids shelf is on, the Library shows only the
+            games you approve, and launching anything else is
+            blocked. The daily limit counts playtime from games
+            launched in KOVA.
+          </p>
+          <div id="kids-settings"></div>
+        </div>
+
+        <div class="settings-card">
+          <h2>Cloud sync</h2>
+          <p class="settings-note">
+            Sync your profile and state through your own cloud
+            folder — iCloud Drive, Google Drive, or any folder that
+            syncs. KOVA has no server holding your data. Push sends
+            this machine's state to the folder; Pull replaces this
+            machine's state with the folder's copy (last-write-wins).
+          </p>
+          <div id="sync-settings"></div>
+        </div>
+
+        <div class="settings-card">
+          <h2>State backup</h2>
+          <p class="settings-note">
+            Your gamertag, profiles, wishlist, and shelves live in
+            one file on this machine. Export a copy for safekeeping;
+            import replaces everything with the file's contents.
+          </p>
+          <div class="settings-row">
+            <button id="state-export" type="button">Export state</button>
+            <button id="state-import-btn" type="button" class="ghost">Import state…</button>
+            <input id="state-import" type="file" accept=".json,application/json" hidden />
+          </div>
+          <p id="state-backup-note" class="profile-note"></p>
+        </div>
+
+        <div class="settings-card">
+          <h2>Disk space</h2>
+          <p class="settings-note">
+            How much room each game takes. Sizes are measured from
+            the install folders KOVA knows — Steam and web titles
+            report no size, and some folders are only partly counted.
+          </p>
+          <div class="settings-row">
+            <button id="disk-refresh" type="button">Measure disk usage</button>
+          </div>
+          <div id="disk-usage"></div>
+        </div>
+
+        <div class="settings-card">
+          <h2>KOVA Beta Program</h2>
+          <p class="settings-note">
+            Join the beta to try the upcoming platform UI early — a
+            brand-new light shell you can switch to from here. The
+            current UI stays the main UI; the beta is an option, not
+            a replacement.
+          </p>
+          <div id="beta-settings"></div>
+          <div class="profile-field">
+            <label for="beta-feedback-input">Beta feedback</label>
+            <textarea id="beta-feedback-input" class="text-input store-submit-desc" placeholder="What do you think of the beta? (Saved on this machine — there is no backend to send it to yet.)" maxlength="2000"></textarea>
+          </div>
+          <div class="settings-row">
+            <button id="beta-feedback-save" type="button">Save feedback note</button>
+          </div>
+          <div id="beta-feedback-list"></div>
+        </div>
+
+        <div class="settings-card">
           <h2>Quick Panel</h2>
           <p class="settings-note">
             Press <strong id="hotkey-hint">⌘+Shift+K</strong> anywhere to
             summon the KOVA Quick Panel — your library and Quick Resume,
             floating over the desktop. Esc closes it.
           </p>
+          <p class="settings-note">
+            Your recents are also in the menu bar — KOVA's tray icon
+            launches your recent games without opening the window.
+          </p>
         </div>
 
         <div class="settings-card">
           <h2>About</h2>
           <p class="settings-note">
-            KOVA by Avok Interactive · Version 1.1.1<br />
+            KOVA by Avok Interactive · Version 1.2.0<br />
             All your games. One system.
           </p>
         </div>
@@ -259,5 +468,33 @@
       <span>KOVA V1 — unified library + Quick Panel</span>
       <span>AVOK &#8596; KOVA</span>
     </footer>
+
+    <!-- v1.2.0 §10 — Big Picture mode: a fullscreen,
+         controller-only view. Hidden until opened; nav.js focus
+         works here because it collects visible focusables. -->
+    <div id="big-picture" class="big-picture" hidden>
+      <div class="big-picture-head">
+        <span class="big-picture-title">KOVA · Big Picture</span>
+        <button id="big-picture-close" class="ghost" type="button">Exit Big Picture (Esc)</button>
+      </div>
+      <div id="big-picture-grid" class="big-picture-grid"></div>
+      <p class="big-picture-hint">D-pad or arrows to move · A / Enter to launch · B / Esc to exit</p>
+    </div>
+
+    <!-- v1.2.0 §7 — first-run onboarding. Shown only on a fresh
+         install (no gamertag, no recents, no profiles) and only
+         until the player finishes or skips it. Never blocks: the
+         Skip button is always there. -->
+    <div id="onboarding" class="onboarding" hidden>
+      <div class="onboarding-card" role="dialog" aria-labelledby="onboarding-title">
+        <h2 id="onboarding-title">Welcome to KOVA</h2>
+        <p class="settings-note">Three quick steps — or skip and explore on your own.</p>
+        <div id="onboarding-body"></div>
+        <div class="settings-row onboarding-actions">
+          <button id="onboarding-next" type="button">Continue</button>
+          <button id="onboarding-skip" type="button" class="ghost">Skip for now</button>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

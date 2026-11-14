@@ -35,6 +35,7 @@ const refreshBtn = document.getElementById("refresh");
 const backBtn = document.getElementById("back");
 const hotkeyHintEl = document.getElementById("hotkey-hint");
 const panelGamertagEl = document.getElementById("panel-gamertag");
+const controllerStatusEl = document.getElementById("controller-status");
 
 const SOURCE_LABELS = {
   steam: "Steam",
@@ -50,12 +51,12 @@ const SOURCE_LABELS = {
 // a mapped record's bundle icon would show the studio mark
 // instead of the game's own logo. The mapped files are Mac-side
 // build inputs living in app/src/ (see README, slice 5.2) — they
-// are NOT in this repo tree. The Open World entry is the OLD globe
-// mark: a newer TOW icon exists elsewhere and Dre has NOT picked
-// it, so it is referenced nowhere here.
+// are NOT in this repo tree. The Open World entry is the NEW
+// no-text globe (v1.2.0 §5, Dre's pick 2026-11-13): the old globe
+// is retired and referenced nowhere here.
 const AVOK_GAME_ART = {
   "avok:dispatch-hq": "dispatch-hq-badge.png",
-  "avok:the-open-world": "the-open-world-mark.png",
+  "avok:the-open-world": "tow-icon-new.png",
 };
 
 function avokGameArtFile(game) {
@@ -83,6 +84,7 @@ function attachAvokGameArt(game, container, className) {
 
 let cachedLibrary = null;
 let profilesMap = {};
+let kidsSettings = { enabled: false, allowed_keys: [], daily_limit_minutes: null, minutes_used_today: 0, used_date: "" };
 const localIconRequests = new Map();
 
 function sourceLabel(source) {
@@ -197,6 +199,23 @@ function displayName(game) {
 
 async function launch(game, button) {
   if (!invoke || !game.launch_uri) return;
+  // v1.2.0 §10 — the Kids shelf gate, mirrored from the main
+  // window: launching outside the allowed games (or past the
+  // daily limit) is blocked with a plain message.
+  if (kidsSettings.enabled) {
+    if (!(kidsSettings.allowed_keys || []).includes(profileKey(game))) {
+      setStatus(displayName(game) + " is not on the Kids shelf.", true);
+      return;
+    }
+    if (
+      kidsSettings.daily_limit_minutes !== null &&
+      kidsSettings.daily_limit_minutes !== undefined &&
+      (kidsSettings.minutes_used_today || 0) >= kidsSettings.daily_limit_minutes
+    ) {
+      setStatus("Today's play time is used up — the Kids shelf limit has been reached.", true);
+      return;
+    }
+  }
   button.disabled = true;
   try {
     // launch_game launches and records the launch (stats +
@@ -267,6 +286,7 @@ function render(library) {
     .flatMap((report) => report.games)
     .map(mergeProfile)
     .filter((game) => !game.hidden)
+    .filter((game) => !kidsSettings.enabled || (kidsSettings.allowed_keys || []).includes(game.key))
     .sort(
       (a, b) =>
         Number(b.favorite) - Number(a.favorite) ||
@@ -293,7 +313,8 @@ function renderRecents(recents) {
   recentsListEl.innerHTML = "";
   const visible = (recents || [])
     .map(mergeProfile)
-    .filter((game) => !game.hidden);
+    .filter((game) => !game.hidden)
+    .filter((game) => !kidsSettings.enabled || (kidsSettings.allowed_keys || []).includes(game.key));
   if (visible.length === 0) {
     recentsEl.hidden = true;
     return;
@@ -344,6 +365,8 @@ async function loadState() {
   try {
     const state = await invoke("get_state");
     profilesMap = (state && state.profiles) || {};
+    // v1.2.0 §10: the Kids gate state travels with the panel.
+    if (state && state.kids) kidsSettings = state.kids;
     renderRecents(state && state.recents);
     // v1.1.1: the gamertag travels with the panel — the same
     // identity as the main window. Hidden until a gamertag is set.
@@ -440,8 +463,51 @@ hotkeyHintEl.textContent = /Mac/i.test(navigator.userAgent)
   ? "⌘+Shift+K"
   : "Ctrl+Shift+K";
 
+// v1.2.0 §10 — controller status in the Quick Panel. Lists
+// connected controllers by their Gamepad API id. Battery level
+// is NOT exposed by the API, so it is never shown — the panel
+// says so plainly instead of inventing a number.
+function renderControllerStatus() {
+  if (!controllerStatusEl) return;
+  controllerStatusEl.innerHTML = "";
+  const heading = document.createElement("h3");
+  heading.className = "controller-title";
+  heading.textContent = "Controllers";
+  controllerStatusEl.appendChild(heading);
+  let pads = [];
+  try {
+    if (typeof navigator !== "undefined" && navigator.getGamepads) {
+      pads = Array.from(navigator.getGamepads()).filter(Boolean);
+    }
+  } catch (err) {
+    pads = [];
+  }
+  if (pads.length === 0) {
+    const none = document.createElement("p");
+    none.className = "controller-none";
+    none.textContent = "No controller connected.";
+    controllerStatusEl.appendChild(none);
+  } else {
+    for (const pad of pads) {
+      const row = document.createElement("p");
+      row.className = "controller-row";
+      row.textContent = pad.id || "Controller " + pad.index;
+      controllerStatusEl.appendChild(row);
+    }
+  }
+  const batteryNote = document.createElement("p");
+  batteryNote.className = "controller-note";
+  batteryNote.textContent = "Battery level isn't available — the Gamepad API doesn't expose it.";
+  controllerStatusEl.appendChild(batteryNote);
+}
+
+window.addEventListener("gamepadconnected", renderControllerStatus);
+window.addEventListener("gamepaddisconnected", renderControllerStatus);
+window.addEventListener("focus", renderControllerStatus);
+
 window.addEventListener("DOMContentLoaded", () => {
   loadState();
+  renderControllerStatus();
   if (cachedLibrary) {
     render(cachedLibrary);
   } else {

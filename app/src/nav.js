@@ -42,6 +42,7 @@ window.KovaNav = (function () {
 
   var onBack = null;
   var onHome = null;
+  var onBigPicture = null;
   var started = false;
 
   // Anchor for re-anchoring after re-renders: the stable key of
@@ -294,6 +295,12 @@ window.KovaNav = (function () {
     if (typeof onHome === "function") onHome();
   }
 
+  // v1.2.0 §10: Y toggles Big Picture (main window only — the
+  // panel never wires this callback).
+  function goBigPicture() {
+    if (typeof onBigPicture === "function") onBigPicture();
+  }
+
   function isField(el) {
     return !!el && el.matches("input, textarea, select");
   }
@@ -428,6 +435,7 @@ window.KovaNav = (function () {
       buttonPressed(gp, 1),
       buttonPressed(gp, 9),
       buttonPressed(gp, 16),
+      buttonPressed(gp, 3),
     ];
     var was = prevButtons;
     if (pressedNow[0] && !was[0]) {
@@ -442,6 +450,8 @@ window.KovaNav = (function () {
     }
     if (pressedNow[1] && !was[1]) goBack();
     if ((pressedNow[2] && !was[2]) || (pressedNow[3] && !was[3])) goHome();
+    // v1.2.0 §10: Y toggles Big Picture (no-op where unwired).
+    if (pressedNow[4] && !was[4]) goBigPicture();
     prevButtons = pressedNow;
   }
 
@@ -471,6 +481,7 @@ window.KovaNav = (function () {
     options = options || {};
     onBack = options.onBack || null;
     onHome = options.onHome || null;
+    onBigPicture = options.onBigPicture || null;
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("focusin", onFocusIn);
@@ -500,6 +511,7 @@ window.KovaNav = (function () {
     activate: activate,
     goBack: goBack,
     goHome: goHome,
+    goBigPicture: goBigPicture,
     // Exposed for the parent's accent check: the ring color.
     accent: ACCENT,
   };

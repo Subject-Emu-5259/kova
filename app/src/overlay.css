@@ -255,3 +255,38 @@ body.overlay-body {
   outline: 3px solid #00d8f0 !important;
   outline-offset: 2px;
 }
+
+/* --------------------------------------- v1.2.0: controller status --- */
+
+/* Connected controllers, listed by Gamepad API id. Battery is
+   never shown: the API doesn't expose it, and the note says so. */
+.controller-status {
+  padding: 0.8rem 1.1rem 0.2rem;
+  border-bottom: 1px solid #26282e;
+}
+
+.controller-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.controller-row {
+  margin: 0 0 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.controller-none {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.controller-note {
+  margin: 0 0 0.7rem;
+  color: var(--faint);
+  font-size: 0.82rem;
+}

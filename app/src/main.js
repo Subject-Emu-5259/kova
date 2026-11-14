@@ -78,6 +78,7 @@ const tabBtns = Array.from(document.querySelectorAll(".tab"));
 const views = {
   home: document.getElementById("view-home"),
   library: document.getElementById("view-library"),
+  store: document.getElementById("view-store"),
   profile: document.getElementById("view-profile"),
   detail: document.getElementById("view-detail"),
   settings: document.getElementById("view-settings"),
@@ -103,12 +104,12 @@ const SOURCE_ORDER = ["steam", "epic", "gog", "itch", "standalone", "avok"];
 // The mapped files are Mac-side build inputs living in app/src/
 // (see README, slice 5.2) — they are NOT in this repo tree, and
 // the frontend degrades cleanly if one is missing (the <img>
-// removes itself on error). The Open World entry is the OLD globe
-// mark: a newer TOW icon exists elsewhere and Dre has NOT picked
-// it, so it is referenced nowhere here.
+// removes itself on error). The Open World entry is the NEW
+// no-text globe (v1.2.0 §5, Dre's pick 2026-11-13): the old globe
+// is retired and referenced nowhere here.
 const AVOK_GAME_ART = {
   "avok:dispatch-hq": "dispatch-hq-badge.png",
-  "avok:the-open-world": "the-open-world-mark.png",
+  "avok:the-open-world": "tow-icon-new.png",
 };
 
 function avokGameArtFile(game) {
@@ -153,8 +154,15 @@ let appState = {
   standalone_folders: [],
   profiles: {},
   show_hidden_games: false,
-  gamer_profile: { gamertag: "", avatar: "", bio: "" },
+  gamer_profile: { gamertag: "", avatar: "", bio: "", banner: null },
   wishlist: [],
+  shelves: [],
+  beta: { opted_in: false, ui: "classic", accent: "cyan", density: "comfortable", shelf_order: [] },
+  kids: { enabled: false, allowed_keys: [], daily_limit_minutes: null, minutes_used_today: 0, used_date: "" },
+  sync: { enabled: false, folder: null, last_push_at: null, last_pull_at: null },
+  journal: [],
+  save_backups: [],
+  milestones: [],
 };
 let activeFilter = "all";
 let searchQuery = "";
@@ -240,7 +248,9 @@ function profileKey(game) {
 // Fill any state fields an older persisted state (or backend)
 // did not provide, so the rest of the UI can assume they exist.
 // The gamer profile is deep-defaulted: a pre-v1.1.1 state file
-// has no `gamer_profile` key at all.
+// has no `gamer_profile` key at all. The v1.2.0 fields are
+// deep-defaulted the same way: a pre-v1.2.0 state file has none
+// of them, and the backend seeds the built-in shelves on load.
 function normalizeState(state) {
   const normalized = Object.assign(
     {
@@ -249,14 +259,64 @@ function normalizeState(state) {
       profiles: {},
       show_hidden_games: false,
       wishlist: [],
+      shelves: [],
+      journal: [],
+      save_backups: [],
+      milestones: [],
     },
     state || {}
   );
   normalized.gamer_profile = Object.assign(
-    { gamertag: "", avatar: "", bio: "" },
+    { gamertag: "", avatar: "", bio: "", banner: null },
     (state && state.gamer_profile) || {}
   );
+  normalized.beta = Object.assign(
+    { opted_in: false, ui: "classic", accent: "cyan", density: "comfortable", shelf_order: [] },
+    (state && state.beta) || {}
+  );
+  normalized.kids = Object.assign(
+    { enabled: false, allowed_keys: [], daily_limit_minutes: null, minutes_used_today: 0, used_date: "" },
+    (state && state.kids) || {}
+  );
+  normalized.sync = Object.assign(
+    { enabled: false, folder: null, last_push_at: null, last_pull_at: null },
+    (state && state.sync) || {}
+  );
   return normalized;
+}
+
+// v1.2.0 §10 — the Kids shelf gate. When enabled, only the
+// allowed games are visible on library surfaces, and launching
+// anything else (or past the daily limit) is blocked with a
+// plain message. The Profile and Settings views are the parent's
+// and stay unfiltered.
+function kidsEnabled() {
+  return Boolean(appState && appState.kids && appState.kids.enabled);
+}
+
+function kidsAllows(game) {
+  if (!kidsEnabled()) return true;
+  const allowed = (appState.kids && appState.kids.allowed_keys) || [];
+  return allowed.includes(profileKey(game));
+}
+
+function kidsTimeRemainingMinutes() {
+  if (!kidsEnabled()) return null;
+  const kids = appState.kids || {};
+  if (kids.daily_limit_minutes === null || kids.daily_limit_minutes === undefined) return null;
+  return Math.max(0, kids.daily_limit_minutes - (kids.minutes_used_today || 0));
+}
+
+function kidsLaunchBlockReason(game) {
+  if (!kidsEnabled()) return null;
+  if (!kidsAllows(game)) {
+    return displayName(game) + " is not on the Kids shelf.";
+  }
+  const remaining = kidsTimeRemainingMinutes();
+  if (remaining !== null && remaining <= 0) {
+    return "Today's play time is used up — the Kids shelf limit has been reached.";
+  }
+  return null;
 }
 
 function defaultProfile() {
@@ -268,6 +328,21 @@ function defaultProfile() {
     art_url_override: null,
     launch_count: 0,
     last_launched: null,
+    // v1.2.0 §1 performance (serde defaults on the backend match).
+    perf_launch_preset: null,
+    perf_show_fps: false,
+    perf_priority: "normal",
+    // v1.2.0 §2 playtime (read-only from the UI — the backend
+    // records sessions; the UI only displays them).
+    total_play_seconds: 0,
+    last_session_seconds: 0,
+    last_session_end: null,
+    // v1.2.0 §7/§10 rating, notes, art, saves, launch mode.
+    rating: null,
+    note: null,
+    cover_art: null,
+    save_folder: null,
+    launch_mode: null,
   };
 }
 
@@ -298,6 +373,21 @@ function mergeProfile(game) {
     merged.launch_count = profile.launch_count || 0;
     merged.last_launched =
       profile.last_launched === undefined ? null : profile.last_launched;
+    // v1.2.0: the backend annotates the scan with the same
+    // fields; the fresher state map wins here too.
+    merged.perf_launch_preset = profile.perf_launch_preset || null;
+    merged.perf_show_fps = Boolean(profile.perf_show_fps);
+    merged.perf_priority = profile.perf_priority || "normal";
+    merged.total_play_seconds = profile.total_play_seconds || 0;
+    merged.last_session_seconds = profile.last_session_seconds || 0;
+    merged.last_session_end =
+      profile.last_session_end === undefined ? null : profile.last_session_end;
+    merged.rating =
+      profile.rating === undefined ? null : profile.rating;
+    merged.note = profile.note === undefined ? null : profile.note;
+    merged.cover_art = profile.cover_art || null;
+    merged.save_folder = profile.save_folder || null;
+    merged.launch_mode = profile.launch_mode || null;
   } else {
     merged.display_name = game.display_name || game.name;
     merged.favorite = Boolean(game.favorite);
@@ -307,6 +397,18 @@ function mergeProfile(game) {
     merged.launch_count = game.launch_count || 0;
     merged.last_launched =
       game.last_launched === undefined ? null : game.last_launched;
+    merged.perf_launch_preset = game.perf_launch_preset || null;
+    merged.perf_show_fps = Boolean(game.perf_show_fps);
+    merged.perf_priority = game.perf_priority || "normal";
+    merged.total_play_seconds = game.total_play_seconds || 0;
+    merged.last_session_seconds = game.last_session_seconds || 0;
+    merged.last_session_end =
+      game.last_session_end === undefined ? null : game.last_session_end;
+    merged.rating = game.rating === undefined ? null : game.rating;
+    merged.note = game.note === undefined ? null : game.note;
+    merged.cover_art = game.cover_art || null;
+    merged.save_folder = game.save_folder || null;
+    merged.launch_mode = game.launch_mode || null;
   }
   return merged;
 }
@@ -441,6 +543,18 @@ function gameArt(game, wide) {
     img.addEventListener("error", () => img.remove());
     art.appendChild(img);
   }
+  // v1.2.0 §7: a custom cover upload is the player's most
+  // deliberate art choice, so it layers last (on top of the URL
+  // override, the capsule, and the mapped art).
+  if (game.cover_art) {
+    const img = document.createElement("img");
+    img.className = "art-cover";
+    img.alt = "";
+    img.loading = "lazy";
+    img.src = game.cover_art;
+    img.addEventListener("error", () => img.remove());
+    art.appendChild(img);
+  }
   const tag = el("span", "tag tag-" + game.source, sourceLabel(game.source));
   art.appendChild(tag);
   // Slice 5.2 skip rule: a mapped Avok title never gets the
@@ -483,6 +597,13 @@ function showView(name) {
 
 async function launchGame(game, button) {
   if (!invoke || !game.launch_uri) return;
+  // v1.2.0 §10 — the Kids shelf blocks launches outside the
+  // allowed games (or past the daily limit) with a plain message.
+  const blockReason = kidsLaunchBlockReason(game);
+  if (blockReason) {
+    setStatus(blockReason, true);
+    return;
+  }
   if (button) button.disabled = true;
   try {
     // launch_game launches, applies the profile's launch args for
@@ -497,6 +618,8 @@ async function launchGame(game, button) {
       appState = normalizeState(updated);
       renderQuickResume();
       renderFavorites();
+      // v1.2.0 §7: a fresh launch resets the session timer's note.
+      if (window.KovaV12 && window.KovaV12.onLaunched) window.KovaV12.onLaunched();
       if (currentView === "detail" && detailGame && detailGame.key === game.key) {
         detailGame = mergeProfile(detailGame);
         renderDetail();
@@ -628,7 +751,8 @@ function renderQuickResume() {
   quickResumeEl.innerHTML = "";
   const recents = ((appState && appState.recents) || [])
     .map(mergeProfile)
-    .filter((game) => !game.hidden);
+    .filter((game) => !game.hidden)
+    .filter((game) => kidsAllows(game));
   if (recents.length === 0) {
     quickResumeEl.appendChild(
       el(
@@ -648,6 +772,7 @@ function renderFavorites() {
   favoritesEl.innerHTML = "";
   const favorites = allGames()
     .filter((game) => game.favorite && !game.hidden)
+    .filter((game) => kidsAllows(game))
     .sort((a, b) =>
       displayName(a).toLowerCase().localeCompare(displayName(b).toLowerCase())
     );
@@ -677,8 +802,13 @@ function renderShelves() {
     .filter((report) => report.source !== "avok")
     .sort((a, b) => SOURCE_ORDER.indexOf(a.source) - SOURCE_ORDER.indexOf(b.source));
   let rendered = 0;
+  // v1.2.0 §7: the player's collection shelves render as Home
+  // rows above the source strips (in beta.shelf_order when set).
+  if (window.KovaV12 && window.KovaV12.renderHomeShelfRows) {
+    rendered += window.KovaV12.renderHomeShelfRows(shelvesEl);
+  }
   for (const report of ordered) {
-    const games = gamesForSource(report.source).filter((g) => !g.hidden);
+    const games = gamesForSource(report.source).filter((g) => !g.hidden).filter((g) => kidsAllows(g));
     if (games.length === 0) continue;
     rendered += 1;
     const shelf = el("div", "shelf");
@@ -757,7 +887,7 @@ function renderAvokStore() {
     avokStoreEl.appendChild(el("p", "empty-note", "Scanning your library…"));
     return;
   }
-  const games = gamesForSource("avok").filter((game) => !game.hidden);
+  const games = gamesForSource("avok").filter((game) => !game.hidden).filter((game) => kidsAllows(game));
   if (games.length === 0) {
     avokStoreEl.appendChild(
       el("p", "empty-note", "No Avok titles to show right now.")
@@ -777,6 +907,7 @@ function libraryGames() {
   return allGames().filter((game) => {
     if (activeFilter !== "all" && game.source !== activeFilter) return false;
     if (game.hidden && !showHidden) return false;
+    if (!kidsAllows(game)) return false;
     return true;
   });
 }
@@ -830,6 +961,7 @@ function countedGames(source) {
   const showHidden = Boolean(appState.show_hidden_games);
   return allGames().filter((game) => {
     if (source !== "all" && game.source !== source) return false;
+    if (!kidsAllows(game)) return false;
     return showHidden || !game.hidden;
   });
 }
@@ -982,6 +1114,13 @@ function renderDetail() {
 
   columns.appendChild(renderProfileSection(game));
   body.appendChild(columns);
+  // v1.2.0: playtime, performance, rating + note + cover,
+  // shelves, save backups, journal, and duplicate hints live in
+  // v12.js and render below the two columns.
+  if (window.KovaV12 && window.KovaV12.renderDetailExtras) {
+    const extras = window.KovaV12.renderDetailExtras(game);
+    if (extras) body.appendChild(extras);
+  }
   detailEl.appendChild(body);
 }
 
@@ -1423,15 +1562,21 @@ function wishlistButton(game) {
 // Stats computed from the library as rendered (hidden games
 // excluded, same rule as the shelves). Before the first scan
 // there is no library: every value is null and the strip shows
-// dashes — a missing value, not a zero.
+// dashes — a missing value, not a zero. v1.2.0 §2: most-played
+// is BY TIME (total_play_seconds), with launch count kept as its
+// own cell; total hours is the sum across the library.
 function profileStats() {
   if (!lastResult) {
-    return { games: null, favorites: null, totalLaunches: null, mostPlayed: null };
+    return { games: null, favorites: null, totalLaunches: null, mostPlayed: null, totalPlaySeconds: null, mostPlayedByTime: null };
   }
   const games = allGames().filter((game) => !game.hidden);
   const favorites = games.filter((game) => game.favorite).length;
   const totalLaunches = games.reduce(
     (sum, game) => sum + (game.launch_count || 0),
+    0
+  );
+  const totalPlaySeconds = games.reduce(
+    (sum, game) => sum + (game.total_play_seconds || 0),
     0
   );
   let mostPlayed = null;
@@ -1443,7 +1588,26 @@ function profileStats() {
       mostPlayed = game;
     }
   }
-  return { games: games.length, favorites, totalLaunches, mostPlayed };
+  let mostPlayedByTime = null;
+  for (const game of games) {
+    if (
+      (game.total_play_seconds || 0) > 0 &&
+      (!mostPlayedByTime || game.total_play_seconds > mostPlayedByTime.total_play_seconds)
+    ) {
+      mostPlayedByTime = game;
+    }
+  }
+  return { games: games.length, favorites, totalLaunches, mostPlayed, totalPlaySeconds, mostPlayedByTime };
+}
+
+// v1.2.0 §2: "12h 34m" for the stats strip and share card;
+// under an hour reads "34m", under a minute reads "0m".
+function formatPlaytime(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(totalSeconds || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return hours + "h " + minutes + "m";
+  return minutes + "m";
 }
 
 function statCell(label, value, caption) {
@@ -1464,6 +1628,16 @@ function renderProfile() {
   profileHeaderEl.appendChild(avatarElement(profile.avatar, "avatar-lg"));
   const identity = el("div", "profile-identity");
   identity.appendChild(el("h1", "profile-name", tag || "Your profile"));
+  // v1.2.0 §9: the gamertag IS the KOVA LIVE tag — the identity
+  // seed, with the honest line that nothing is online yet.
+  identity.appendChild(el("p", "profile-live-tag", "Your KOVA LIVE tag"));
+  identity.appendChild(
+    el(
+      "p",
+      "profile-live-note",
+      "LIVE is coming — your tag is already yours. Nothing is online yet."
+    )
+  );
   identity.appendChild(
     el(
       "p",
@@ -1503,14 +1677,25 @@ function renderProfile() {
   );
   profileStatsEl.appendChild(
     statCell(
-      "Most played",
-      stats.mostPlayed ? displayName(stats.mostPlayed) : dash,
-      stats.mostPlayed
-        ? stats.mostPlayed.launch_count +
-          (stats.mostPlayed.launch_count === 1 ? " launch" : " launches")
-        : "nothing launched yet"
+      "Total hours",
+      stats.totalPlaySeconds === null ? dash : formatPlaytime(stats.totalPlaySeconds),
+      "games launched from KOVA"
     )
   );
+  profileStatsEl.appendChild(
+    statCell(
+      "Most played",
+      stats.mostPlayedByTime ? displayName(stats.mostPlayedByTime) : dash,
+      stats.mostPlayedByTime
+        ? formatPlaytime(stats.mostPlayedByTime.total_play_seconds) + " played"
+        : "no playtime recorded yet"
+    )
+  );
+  // v1.2.0 §2/§7/§10: recent sessions, library stats, and
+  // milestones render into the Profile view's v12 containers.
+  if (window.KovaV12 && window.KovaV12.renderProfileExtras) {
+    window.KovaV12.renderProfileExtras();
+  }
 
   profileRecentsEl.innerHTML = "";
   const recents = ((appState && appState.recents) || [])
@@ -1584,14 +1769,22 @@ function shareCardText() {
         " launches"
     );
   }
-  if (stats.mostPlayed) {
+  // v1.2.0 §2: the card carries total hours, and most-played is
+  // by time — playtime counts only games launched from KOVA.
+  if (stats.totalPlaySeconds !== null && stats.totalPlaySeconds > 0) {
+    lines.push("Total playtime: " + formatPlaytime(stats.totalPlaySeconds));
+  }
+  const mostByTime = stats.mostPlayedByTime || stats.mostPlayed;
+  if (mostByTime) {
     lines.push(
       "Most played: " +
-        displayName(stats.mostPlayed) +
-        " (" +
-        stats.mostPlayed.launch_count +
-        (stats.mostPlayed.launch_count === 1 ? " launch" : " launches") +
-        ")"
+        displayName(mostByTime) +
+        (stats.mostPlayedByTime
+          ? " (" + formatPlaytime(mostByTime.total_play_seconds) + ")"
+          : " (" +
+            mostByTime.launch_count +
+            (mostByTime.launch_count === 1 ? " launch" : " launches") +
+            ")")
     );
   }
   const shelf = shelfNames();
@@ -1710,7 +1903,11 @@ async function drawShareCard(canvas) {
     ["Launches", stats.totalLaunches === null ? "—" : String(stats.totalLaunches)],
     [
       "Most played",
-      stats.mostPlayed ? truncateForCanvas(displayName(stats.mostPlayed), 16) : "—",
+      stats.mostPlayedByTime
+        ? truncateForCanvas(displayName(stats.mostPlayedByTime), 16)
+        : stats.mostPlayed
+          ? truncateForCanvas(displayName(stats.mostPlayed), 16)
+          : "—",
     ],
   ];
   const cellWidth = (SHARE_CARD_WIDTH - 144) / 4;
@@ -1724,11 +1921,23 @@ async function drawShareCard(canvas) {
     ctx.fillText(value, x, 436);
   });
 
+  // v1.2.0 §2: total hours on the card's foot line, next to the
+  // Avok shelf — the same hours the Profile view shows.
   const shelf = shelfNames();
+  const hoursLine =
+    stats.totalPlaySeconds !== null && stats.totalPlaySeconds > 0
+      ? formatPlaytime(stats.totalPlaySeconds) + " played"
+      : "";
+  const footParts = [];
+  if (shelf.length > 0) footParts.push("Avok shelf: " + shelf.join(" · "));
+  if (hoursLine) footParts.push(hoursLine);
   ctx.fillStyle = "#949494";
   ctx.font = "400 24px 'Segoe UI', system-ui, sans-serif";
   ctx.fillText(
-    shelf.length > 0 ? "Avok shelf: " + shelf.join(" · ") : "Avok Interactive",
+    truncateForCanvas(
+      footParts.length > 0 ? footParts.join("  ·  ") : "Avok Interactive",
+      86
+    ),
     72,
     572
   );
@@ -1860,9 +2069,20 @@ let pendingUpdateVersion = null;
 // feed's notes still drive the available-update display. Bump
 // APP_VERSION with each release and add its notes at the top of
 // RELEASE_ORDER.
-const APP_VERSION = "1.1.1";
-const RELEASE_ORDER = ["1.1.1", "1.1.0"];
+const APP_VERSION = "1.2.0";
+const RELEASE_ORDER = ["1.2.0", "1.1.1", "1.1.0"];
 const RELEASE_NOTES = {
+  "1.2.0": [
+    "Performance profiles: launch presets, Apple's FPS HUD, and process priority — per game, set once.",
+    "Playtime tracking: real hours per game, feeding your profile stats and share card.",
+    "The update prompt now shows the real release notes, not a placeholder line.",
+    "Logo placement fixes and polish across the app, and the dock icon stops flipping between the old and new logo.",
+    "Collections, custom cover art, ratings and notes, a session timer, stats, update notifications, and state backup.",
+    "The Game Store opens for devs: free games, listed and browsable, downloads from the dev's own link.",
+    "KOVA LIVE begins: your gamertag is now your LIVE identity.",
+    "Big Picture mode, save backups, cloud sync through your own storage, a Kids shelf, milestones, a game journal, launch modes, disk view, menu-bar launch, and controller status.",
+    "The KOVA Beta Program: a brand-new light UI you can switch to from Settings, with profile customization first.",
+  ],
   "1.1.1": [
     "Release notes now show in the app — what changed in each version, right in Settings.",
     "A polished, more platform-feel KOVA: cleaner screens, smoother navigation everywhere.",
@@ -1932,6 +2152,13 @@ async function checkForUpdates(manual) {
         true,
         false
       );
+      // v1.2.0 §7: a macOS notification when an update is found,
+      // not just the badge in Settings. Best-effort and
+      // de-duplicated per version: the 6-hour re-check must not
+      // re-notify for the same release. No-op off macOS.
+      if (window.KovaV12 && window.KovaV12.notifyUpdateOnce) {
+        window.KovaV12.notifyUpdateOnce(info.version, info.notes || "");
+      }
     } else {
       pendingUpdateVersion = null;
       setUpdateBadge(false);
@@ -2041,6 +2268,14 @@ function renderAll() {
     renderFilters();
     renderGrid();
   }
+  // v1.2.0: the Store view, the Kids time indicator, the Big
+  // Picture grid, and the Settings extras re-render with the rest.
+  if (window.KovaV12) {
+    if (window.KovaV12.renderKidsBanner) window.KovaV12.renderKidsBanner();
+    if (window.KovaV12.renderStore) window.KovaV12.renderStore();
+    if (window.KovaV12.renderBigPictureGrid) window.KovaV12.renderBigPictureGrid();
+    if (window.KovaV12.renderSettingsExtras) window.KovaV12.renderSettingsExtras();
+  }
 }
 
 function render(result) {
@@ -2095,6 +2330,12 @@ async function loadState() {
   renderHiddenSettings();
   renderHeaderProfile();
   renderProfileSettings();
+  // v1.2.0: the Kids daily counter resets on a new day, and a
+  // fresh install gets the (skippable) onboarding flow.
+  if (window.KovaV12) {
+    if (window.KovaV12.maybeResetKidsDay) window.KovaV12.maybeResetKidsDay();
+    if (window.KovaV12.maybeShowOnboarding) window.KovaV12.maybeShowOnboarding();
+  }
 }
 
 // ---------------------------------------------------------------- init
@@ -2167,13 +2408,22 @@ hotkeyHintEl.textContent = /Mac/i.test(navigator.userAgent)
 // Library -> Home and stops at Home; Start/Guide returns Home.
 // The navigator owns arrows/Enter/Space/Escape and the gamepad;
 // form fields keep their native keys (see nav.js).
+// v1.2.0 §10: Back first closes Big Picture when it is open,
+// and the Y button toggles Big Picture.
 if (window.KovaNav) {
   window.KovaNav.init({
     onBack: () => {
+      if (window.KovaV12 && window.KovaV12.isBigPictureOpen && window.KovaV12.isBigPictureOpen()) {
+        window.KovaV12.closeBigPicture();
+        return;
+      }
       if (currentView === "detail") showView("library");
       else if (currentView !== "home") showView("home");
     },
     onHome: () => showView("home"),
+    onBigPicture: () => {
+      if (window.KovaV12 && window.KovaV12.toggleBigPicture) window.KovaV12.toggleBigPicture();
+    },
   });
 }
 
@@ -2194,7 +2444,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // that view on load. #detail has no game to show, so it falls
   // back to Home.
   const hashView = (window.location.hash || "").replace(/^#/, "");
-  if (hashView === "library" || hashView === "profile" || hashView === "settings") {
+  if (hashView === "library" || hashView === "profile" || hashView === "settings" || hashView === "store") {
     showView(hashView);
   }
   if (updateCheckBtn) updateCheckBtn.addEventListener("click", () => checkForUpdates(true));

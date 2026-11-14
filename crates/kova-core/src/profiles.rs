@@ -3,6 +3,14 @@
 //! hidden flag, per-game launch options, an art URL override, and
 //! launch statistics (count + last launched).
 //!
+//! v1.2.0 extends the profile with a Performance section
+//! (`perf_*` fields — see [`crate::perf`]), real playtime tracking
+//! (`total_play_seconds` / `last_session_*`), a personal rating +
+//! note, custom cover art, a save-folder pointer, and a one-tap
+//! launch mode. Every new field is serde-defaulted, so a profile
+//! entry written before v1.2.0 loads with the new fields at their
+//! defaults.
+//!
 //! Profiles are keyed by [`profile_key`] — `"<source>:<id>"` —
 //! which depends only on the game's source and store id, never on
 //! its name, so a profile (and its key) survives the user renaming
@@ -19,10 +27,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Game, UnifiedLibrary};
 
+/// The default process priority for a profile that names none.
+fn default_perf_priority() -> String {
+    "normal".to_string()
+}
+
 /// One game's profile. Every field defaults, so a profile entry in
 /// a state file may omit any of them — and a state file written
 /// before slice 5 (no profiles at all) loads as an empty map.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+///
+/// `Default` is implemented by hand (not derived) because
+/// `perf_priority` defaults to `"normal"`, not `""`; serde uses
+/// the same default for a missing field via
+/// [`default_perf_priority`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GameProfile {
     /// Display-name override. `None` (or blank) means "show the
     /// scanned name".
@@ -52,6 +70,85 @@ pub struct GameProfile {
     /// When KOVA last launched this game (Unix epoch seconds).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_launched: Option<i64>,
+    // ---- v1.2.0: performance (§1) ----
+    /// Id of a launch-arg preset from [`crate::perf::PERF_PRESETS`]
+    /// (e.g. `"source-fps60"`), applied on top of `launch_args`
+    /// at launch. `None` means no preset. An unknown id resolves
+    /// to no preset args — never invented ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perf_launch_preset: Option<String>,
+    /// Launch with Apple's Metal FPS HUD on (`MTL_HUD_ENABLED=1`,
+    /// macOS only, Metal games only). Monitoring, not a cap.
+    #[serde(default)]
+    pub perf_show_fps: bool,
+    /// Process priority: `"low"` / `"normal"` / `"high"`. Applies
+    /// only to executables KOVA spawns directly; `.app` launches
+    /// via macOS `open` ignore it, and on Windows it is stored but
+    /// not applied in v1.2.0 (see [`crate::perf::Priority`]).
+    #[serde(default = "default_perf_priority")]
+    pub perf_priority: String,
+    // ---- v1.2.0: playtime (§2) ----
+    /// Total seconds KOVA has watched this game run, summed over
+    /// completed sessions. Only sessions KOVA launched locally
+    /// and watched to completion count.
+    #[serde(default)]
+    pub total_play_seconds: u64,
+    /// Length of the most recent completed session, in seconds.
+    #[serde(default)]
+    pub last_session_seconds: u64,
+    /// When the most recent completed session ended (Unix epoch
+    /// seconds). `None` until the first recorded session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_session_end: Option<i64>,
+    // ---- v1.2.0: rating, notes, art, saves, launch mode (§7/§10) ----
+    /// Personal star rating, 1–5. The app validates the range on
+    /// the way in; anything else is dropped to `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<u8>,
+    /// A private note on the game. Capped at 2000 characters by
+    /// the app on the way in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// Custom cover art: a `data:image/...` URL from a frontend
+    /// upload (downscaled by canvas, capped like the avatar —
+    /// see the app's `set_profile`). `None` means the generated
+    /// art / art override stands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_art: Option<String>,
+    /// Where this game's save files live, when the player set it
+    /// (used by save backups). `None` means "auto-detect".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub save_folder: Option<String>,
+    /// One-tap launch mode: `"quiet"` / `"full"` / `None` (see
+    /// [`crate::perf::LaunchMode`]). `None` means "apply the
+    /// profile's own perf settings as stored".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_mode: Option<String>,
+}
+
+impl Default for GameProfile {
+    fn default() -> Self {
+        GameProfile {
+            name_override: None,
+            favorite: false,
+            hidden: false,
+            launch_args: String::new(),
+            art_url_override: None,
+            launch_count: 0,
+            last_launched: None,
+            perf_launch_preset: None,
+            perf_show_fps: false,
+            perf_priority: default_perf_priority(),
+            total_play_seconds: 0,
+            last_session_seconds: 0,
+            last_session_end: None,
+            rating: None,
+            note: None,
+            cover_art: None,
+            save_folder: None,
+            launch_mode: None,
+        }
+    }
 }
 
 /// All profiles, keyed by [`profile_key`]. A `BTreeMap` so the
@@ -75,6 +172,17 @@ pub fn profile_key(game: &Game) -> String {
 pub fn record_launch(profile: &mut GameProfile, now: i64) {
     profile.launch_count = profile.launch_count.saturating_add(1);
     profile.last_launched = Some(now);
+}
+
+/// Record one completed play session (v1.2.0): `seconds` of play
+/// ending at `end` (Unix epoch seconds) are added to the running
+/// total, and the last-session fields are overwritten with this
+/// session. Every other field is untouched. This is the update the
+/// app's playtime watcher applies when a game it launched exits.
+pub fn record_session(profile: &mut GameProfile, seconds: u64, end: i64) {
+    profile.total_play_seconds = profile.total_play_seconds.saturating_add(seconds);
+    profile.last_session_seconds = seconds;
+    profile.last_session_end = Some(end);
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +292,24 @@ pub fn resolve_recents(recents: &[Game], library: &UnifiedLibrary) -> Vec<Game> 
 /// counts). The text fields prefer `dst`'s value and fall back to
 /// `src`'s: `name_override` / `art_url_override` when `dst` has one
 /// set, `launch_args` when `dst`'s is non-empty.
+///
+/// v1.2.0 fields follow the same shape:
+/// * Playtime sums (`total_play_seconds`), like launch counts —
+///   both sides watched real sessions of one game. The last-session
+///   pair (`last_session_seconds` + `last_session_end`) comes
+///   whole from the side with the later `last_session_end`
+///   (`None` counts as "never", older than any stamp); on a tie,
+///   `dst`'s pair wins. The two fields are never mixed across
+///   sides — a length only means something with its own end stamp.
+/// * `rating` / `note` / `cover_art` / `save_folder` /
+///   `launch_mode` / `perf_launch_preset` take the non-empty side,
+///   `dst` first — same dst-wins rule as the text fields.
+/// * `perf_show_fps` is OR-ed, like the other flags.
+/// * `perf_priority`: a deliberate non-default choice on either
+///   side survives — `dst` wins unless it is `"normal"` (the
+///   default, treated as "no choice made"), in which case `src`'s
+///   value stands. Two different non-default choices resolve to
+///   `dst`'s.
 pub fn merge_profiles(dst: &GameProfile, src: &GameProfile) -> GameProfile {
     let last_launched = match (dst.last_launched, src.last_launched) {
         (Some(a), Some(b)) => Some(a.max(b)),
@@ -191,6 +317,15 @@ pub fn merge_profiles(dst: &GameProfile, src: &GameProfile) -> GameProfile {
         (None, Some(b)) => Some(b),
         (None, None) => None,
     };
+    // The last-session pair travels together, from the side whose
+    // session ended later. `None` (no session yet) sorts below any
+    // stamp; equal stamps keep dst's pair.
+    let (last_session_seconds, last_session_end) =
+        if src.last_session_end.unwrap_or(i64::MIN) > dst.last_session_end.unwrap_or(i64::MIN) {
+            (src.last_session_seconds, src.last_session_end)
+        } else {
+            (dst.last_session_seconds, dst.last_session_end)
+        };
     GameProfile {
         name_override: dst
             .name_override
@@ -209,6 +344,32 @@ pub fn merge_profiles(dst: &GameProfile, src: &GameProfile) -> GameProfile {
             .or_else(|| src.art_url_override.clone()),
         launch_count: dst.launch_count.saturating_add(src.launch_count),
         last_launched,
+        perf_launch_preset: dst
+            .perf_launch_preset
+            .clone()
+            .or_else(|| src.perf_launch_preset.clone()),
+        perf_show_fps: dst.perf_show_fps || src.perf_show_fps,
+        perf_priority: if dst.perf_priority == "normal" {
+            src.perf_priority.clone()
+        } else {
+            dst.perf_priority.clone()
+        },
+        total_play_seconds: dst
+            .total_play_seconds
+            .saturating_add(src.total_play_seconds),
+        last_session_seconds,
+        last_session_end,
+        rating: dst.rating.or(src.rating),
+        note: dst.note.clone().or_else(|| src.note.clone()),
+        cover_art: dst.cover_art.clone().or_else(|| src.cover_art.clone()),
+        save_folder: dst
+            .save_folder
+            .clone()
+            .or_else(|| src.save_folder.clone()),
+        launch_mode: dst
+            .launch_mode
+            .clone()
+            .or_else(|| src.launch_mode.clone()),
     }
 }
 
@@ -254,6 +415,14 @@ pub struct AnnotatedGame {
     pub launch_count: u64,
     /// Last launch time from the profile, if any.
     pub last_launched: Option<i64>,
+    /// Total playtime in seconds from the profile (0 without a
+    /// profile). The library view uses this for "most-played by
+    /// time" without a second fetch.
+    pub total_play_seconds: u64,
+    /// The profile's star rating, 1–5, if the player set one.
+    pub rating: Option<u8>,
+    /// The profile's custom cover art (data URL), if set.
+    pub cover_art: Option<String>,
 }
 
 /// One source's slice of an [`AnnotatedLibrary`] — mirrors
@@ -302,6 +471,9 @@ pub fn annotate_game(game: &Game, profiles: &Profiles) -> AnnotatedGame {
         hidden: profile.map(|p| p.hidden).unwrap_or(false),
         launch_count: profile.map(|p| p.launch_count).unwrap_or(0),
         last_launched: profile.and_then(|p| p.last_launched),
+        total_play_seconds: profile.map(|p| p.total_play_seconds).unwrap_or(0),
+        rating: profile.and_then(|p| p.rating),
+        cover_art: profile.and_then(|p| p.cover_art.clone()),
     }
 }
 
@@ -571,6 +743,7 @@ mod tests {
             art_url_override: None,
             launch_count: 3,
             last_launched: Some(42),
+            ..GameProfile::default()
         };
         let json = serde_json::to_string(&full).unwrap();
         let back: GameProfile = serde_json::from_str(&json).unwrap();
@@ -692,6 +865,7 @@ mod tests {
             art_url_override: None,
             launch_count: 2,
             last_launched: Some(200),
+            ..GameProfile::default()
         };
         let src = GameProfile {
             name_override: Some("Dispatch".to_string()),
@@ -701,6 +875,7 @@ mod tests {
             art_url_override: Some("https://example.invalid/a.png".to_string()),
             launch_count: 3,
             last_launched: Some(150),
+            ..GameProfile::default()
         };
         let merged = merge_profiles(&dst, &src);
         assert_eq!(merged.launch_count, 5);
@@ -800,5 +975,193 @@ mod tests {
         assert_eq!(value["display_name"], "Counter-Strike 2");
         assert_eq!(value["favorite"], false);
         assert_eq!(value["hidden"], false);
+    }
+
+    // ---- v1.2.0: perf, playtime, rating, notes, art, saves ----
+
+    #[test]
+    fn new_profile_fields_default_sensibly() {
+        let profile = GameProfile::default();
+        assert_eq!(profile.perf_launch_preset, None);
+        assert!(!profile.perf_show_fps);
+        assert_eq!(profile.perf_priority, "normal");
+        assert_eq!(profile.total_play_seconds, 0);
+        assert_eq!(profile.last_session_seconds, 0);
+        assert_eq!(profile.last_session_end, None);
+        assert_eq!(profile.rating, None);
+        assert_eq!(profile.note, None);
+        assert_eq!(profile.cover_art, None);
+        assert_eq!(profile.save_folder, None);
+        assert_eq!(profile.launch_mode, None);
+    }
+
+    #[test]
+    fn pre_120_profile_json_loads_clean_with_defaults() {
+        // A profile entry exactly as v1.1.1 wrote it — none of the
+        // v1.2.0 fields present. It must deserialize with every
+        // new field at its default, not error.
+        let parsed: GameProfile = serde_json::from_str(
+            r#"{
+                "name_override": "CS2",
+                "favorite": true,
+                "hidden": false,
+                "launch_args": "-novid",
+                "art_url_override": null,
+                "launch_count": 12,
+                "last_launched": 1730000000
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.name_override.as_deref(), Some("CS2"));
+        assert!(parsed.favorite);
+        assert_eq!(parsed.launch_count, 12);
+        assert_eq!(parsed.perf_launch_preset, None);
+        assert!(!parsed.perf_show_fps);
+        assert_eq!(parsed.perf_priority, "normal");
+        assert_eq!(parsed.total_play_seconds, 0);
+        assert_eq!(parsed.last_session_seconds, 0);
+        assert_eq!(parsed.last_session_end, None);
+        assert_eq!(parsed.rating, None);
+        assert_eq!(parsed.note, None);
+        assert_eq!(parsed.cover_art, None);
+        assert_eq!(parsed.save_folder, None);
+        assert_eq!(parsed.launch_mode, None);
+    }
+
+    #[test]
+    fn full_v120_profile_round_trips() {
+        let full = GameProfile {
+            perf_launch_preset: Some("source-fps60".to_string()),
+            perf_show_fps: true,
+            perf_priority: "high".to_string(),
+            total_play_seconds: 7265,
+            last_session_seconds: 3600,
+            last_session_end: Some(1_730_100_000),
+            rating: Some(5),
+            note: Some("Best with friends.".to_string()),
+            cover_art: Some("data:image/png;base64,AAAA".to_string()),
+            save_folder: Some("/Users/dre/Library/Application Support/CS2".to_string()),
+            launch_mode: Some("quiet".to_string()),
+            ..GameProfile::default()
+        };
+        let json = serde_json::to_string(&full).unwrap();
+        let back: GameProfile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, full);
+    }
+
+    #[test]
+    fn record_session_adds_to_total_and_overwrites_last() {
+        let mut profile = GameProfile {
+            total_play_seconds: 100,
+            last_session_seconds: 100,
+            last_session_end: Some(1_000),
+            ..GameProfile::default()
+        };
+        record_session(&mut profile, 3_600, 1_730_000_000);
+        assert_eq!(profile.total_play_seconds, 3_700);
+        assert_eq!(profile.last_session_seconds, 3_600);
+        assert_eq!(profile.last_session_end, Some(1_730_000_000));
+        record_session(&mut profile, 60, 1_730_000_100);
+        assert_eq!(profile.total_play_seconds, 3_760);
+        assert_eq!(profile.last_session_seconds, 60);
+        assert_eq!(profile.last_session_end, Some(1_730_000_100));
+    }
+
+    #[test]
+    fn merge_profiles_handles_the_v120_fields() {
+        let dst = GameProfile {
+            perf_launch_preset: None,
+            perf_show_fps: false,
+            perf_priority: "normal".to_string(),
+            total_play_seconds: 1_000,
+            last_session_seconds: 1_000,
+            last_session_end: Some(200),
+            rating: None,
+            note: Some("dst note".to_string()),
+            cover_art: None,
+            save_folder: None,
+            launch_mode: Some("quiet".to_string()),
+            ..GameProfile::default()
+        };
+        let src = GameProfile {
+            perf_launch_preset: Some("source-fps60".to_string()),
+            perf_show_fps: true,
+            perf_priority: "high".to_string(),
+            total_play_seconds: 500,
+            last_session_seconds: 500,
+            last_session_end: Some(300),
+            rating: Some(4),
+            note: Some("src note".to_string()),
+            cover_art: Some("data:image/png;base64,AAAA".to_string()),
+            save_folder: Some("/saves/game".to_string()),
+            launch_mode: Some("full".to_string()),
+            ..GameProfile::default()
+        };
+        let merged = merge_profiles(&dst, &src);
+        // Playtime sums; the last-session pair comes whole from
+        // the side whose session ended later (src, stamp 300).
+        assert_eq!(merged.total_play_seconds, 1_500);
+        assert_eq!(merged.last_session_seconds, 500);
+        assert_eq!(merged.last_session_end, Some(300));
+        // The non-empty side wins, dst first.
+        assert_eq!(
+            merged.perf_launch_preset.as_deref(),
+            Some("source-fps60"),
+            "unset dst preset falls back to src"
+        );
+        assert!(merged.perf_show_fps, "flags are OR-ed");
+        assert_eq!(
+            merged.perf_priority, "high",
+            "a default dst priority yields to src's deliberate choice"
+        );
+        assert_eq!(merged.rating, Some(4));
+        assert_eq!(merged.note.as_deref(), Some("dst note"), "dst text wins");
+        assert_eq!(
+            merged.cover_art.as_deref(),
+            Some("data:image/png;base64,AAAA")
+        );
+        assert_eq!(merged.save_folder.as_deref(), Some("/saves/game"));
+        assert_eq!(merged.launch_mode.as_deref(), Some("quiet"), "dst wins");
+
+        // Reverse: dst's later session pair wins whole, and dst's
+        // deliberate priority beats src's.
+        let merged2 = merge_profiles(&src, &dst);
+        assert_eq!(merged2.total_play_seconds, 1_500);
+        assert_eq!(merged2.last_session_seconds, 500);
+        assert_eq!(merged2.last_session_end, Some(300));
+        assert_eq!(merged2.perf_priority, "high");
+        assert_eq!(merged2.note.as_deref(), Some("src note"));
+
+        // A side with no session at all never donates a pair.
+        let no_session = GameProfile::default();
+        let merged3 = merge_profiles(&no_session, &dst);
+        assert_eq!(merged3.last_session_seconds, 1_000);
+        assert_eq!(merged3.last_session_end, Some(200));
+        assert_eq!(merged3.total_play_seconds, 1_000);
+    }
+
+    #[test]
+    fn annotated_game_carries_playtime_rating_and_cover() {
+        let cs = game("steam", "730", "Counter-Strike 2");
+        let profiles = profiles_with(vec![(
+            "steam:730",
+            GameProfile {
+                total_play_seconds: 9_999,
+                rating: Some(5),
+                cover_art: Some("data:image/png;base64,AAAA".to_string()),
+                ..GameProfile::default()
+            },
+        )]);
+        let annotated = annotate_game(&cs, &profiles);
+        assert_eq!(annotated.total_play_seconds, 9_999);
+        assert_eq!(annotated.rating, Some(5));
+        assert_eq!(
+            annotated.cover_art.as_deref(),
+            Some("data:image/png;base64,AAAA")
+        );
+        let plain = annotate_game(&cs, &Profiles::new());
+        assert_eq!(plain.total_play_seconds, 0);
+        assert_eq!(plain.rating, None);
+        assert_eq!(plain.cover_art, None);
     }
 }

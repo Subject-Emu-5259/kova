@@ -1265,3 +1265,444 @@ button.toggle-btn.on {
     flex-wrap: wrap;
   }
 }
+
+/* ------------------------------------------- v1.2.0: classic shell --- */
+
+/* Same direction as 1.1.1 (true-black-flat): flat colour, lightness
+   steps for elevation, accent on data and status only, the brand
+   palette and type kept. Nothing here redesigns the shell. */
+
+/* A custom cover upload layers over the URL override (same
+   z-index, later in the DOM, so it paints on top). */
+.art img.art-cover {
+  z-index: 1;
+}
+
+/* The session timer's gentle note, under the status bar. */
+.session-banner {
+  padding: 0.7rem 1.5rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 0.98rem;
+  font-weight: 600;
+}
+
+.session-banner[hidden] {
+  display: none;
+}
+
+/* The Kids shelf indicator at the top of the Library. */
+.kids-banner {
+  padding: 0.9rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 1.25rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.kids-banner[hidden] {
+  display: none;
+}
+
+/* Profile: the LIVE tag line under the gamertag. */
+.profile-live-tag {
+  margin: 0;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.profile-live-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.profile-playtime-note {
+  margin: 0 0 0.6rem;
+}
+
+/* Detail extras: full-width cards below the two columns. */
+.detail-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.detail-extra {
+  margin-top: 1.2rem;
+  max-width: none;
+}
+
+/* Performance + launch-mode controls. */
+.perf-select {
+  max-width: 560px;
+  width: 100%;
+}
+
+.launch-mode-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.95rem;
+}
+
+.launch-mode-option {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.launch-mode-option input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  transform: translateY(2px);
+}
+
+.launch-mode-name {
+  flex-shrink: 0;
+}
+
+.launch-mode-desc {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.88rem;
+}
+
+/* Star ratings: unlit stars are faint, lit stars are accent. */
+.stars-row {
+  display: flex;
+  gap: 0.2rem;
+  margin-bottom: 0.5rem;
+}
+
+.star-btn {
+  background: transparent;
+  color: var(--panel-3);
+  font-size: 1.8rem;
+  line-height: 1;
+  padding: 0.2rem 0.3rem;
+}
+
+.star-btn:hover {
+  background: transparent;
+  color: var(--faint);
+}
+
+.star-btn.lit {
+  color: var(--accent);
+}
+
+.star-btn.lit:hover {
+  color: #2ce0f2;
+}
+
+/* Note / journal textareas. */
+.detail-note {
+  min-height: 84px;
+  resize: vertical;
+  width: 100%;
+  max-width: 560px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.cover-row {
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Shelf rows in Settings + the detail assignment list. */
+.shelf-name-input {
+  max-width: 260px;
+}
+
+.shelf-count-inline {
+  color: var(--muted);
+  font-size: 0.9rem;
+  flex: 1;
+}
+
+.shelf-builtin-tag {
+  color: var(--faint);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.shelf-toggle {
+  margin-bottom: 0.6rem;
+}
+
+/* Save backups + journal entries. */
+.backup-list,
+.journal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.journal-entry {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+}
+
+.journal-date {
+  color: var(--faint);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.journal-text {
+  margin: 0.3rem 0 0;
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.session-meta {
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Milestones: earned rows get the accent badge. */
+.milestone-row {
+  display: flex;
+  gap: 0.9rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 0.6rem;
+}
+
+.milestone-badge {
+  font-size: 1.5rem;
+  line-height: 1.2;
+  color: var(--faint);
+  flex-shrink: 0;
+}
+
+.milestone-row.earned .milestone-badge {
+  color: var(--accent);
+}
+
+.milestone-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.milestone-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.milestone-desc {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.milestone-progress {
+  color: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.milestone-bar {
+  height: 6px;
+  background: var(--panel-3);
+  border-radius: 999px;
+  margin-top: 0.4rem;
+  overflow: hidden;
+}
+
+.milestone-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+/* Kids picker: a scrollable checklist. */
+.kids-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.kids-pick {
+  margin-bottom: 0.4rem;
+  font-weight: 400;
+}
+
+.kids-limit-input {
+  max-width: 280px;
+}
+
+/* Beta program. */
+.beta-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #03181d;
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  margin-bottom: 0.8rem;
+}
+
+.beta-ui-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.beta-feedback-row {
+  align-items: flex-start;
+}
+
+.beta-feedback-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.store-submit-desc {
+  min-height: 84px;
+  resize: vertical;
+  width: 100%;
+  max-width: 560px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+/* Big Picture mode: a fullscreen layer over the whole window. */
+.big-picture-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin: 1.2rem 0 0.4rem;
+}
+
+.big-picture {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--graphite);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 2rem;
+  overflow-y: auto;
+}
+
+.big-picture[hidden] {
+  display: none;
+}
+
+.big-picture-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+
+.big-picture-title {
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.big-picture-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.2rem;
+  flex: 1;
+  align-content: start;
+}
+
+.big-picture-tile .tile-title {
+  font-size: 1.25rem;
+}
+
+.big-picture-hint {
+  margin: 1.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  text-align: center;
+}
+
+/* First-run onboarding: a centred card over a dimmed window. */
+.onboarding {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(11, 13, 15, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.onboarding[hidden] {
+  display: none;
+}
+
+.onboarding-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.8rem 2rem;
+  max-width: 560px;
+  width: 100%;
+}
+
+.onboarding-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+}
+
+.onboarding-actions {
+  margin-top: 1.4rem;
+}
+
+@media (max-width: 700px) {
+  .big-picture {
+    padding: 1rem;
+  }
+
+  .big-picture-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+
+  .session-meta {
+    text-align: left;
+  }
+}

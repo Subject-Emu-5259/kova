@@ -192,6 +192,60 @@ An updater can only update an app that already has the updater. KOVA
    1.1.1) is the proof the feature works, verified on Dre's Mac
    (§9) — not assumed from a passing build.
 
+**Day-one feed rule (learned 2026-11-12):** the feed must exist from
+the first OTA-capable release. v1.1.0 shipped with the feed planned
+for 1.1.1, and every check on the fresh install failed with
+"Couldn't check for updates" (the feed URL 404'd). Ship a
+same-version stub manifest (version == installed) with each
+OTA-capable release until the first real update replaces it: the
+updater compares versions first and returns "no update" before
+touching the platform entries, so the stub's entries are never
+fetched. The 1.1.0 stub is at
+`site/public/updates/kova/latest.json` in the KOVA site repo
+(see the README next to it).
+
+**createUpdaterArtifacts rule (learned 2026-11-13, root cause of the
+unsigned 1.1.1):** `bundle.createUpdaterArtifacts` must be `true` in
+`tauri.conf.json`, or the bundler NEVER produces the updater
+artifacts (`.app.tar.gz` + `.sig` on macOS, `.sig` files on
+Windows) — it builds only the plain installers and never attempts
+signing, with no error and no warning. The secrets, the pubkey, and
+`includeUpdaterJson: true` in the workflow are all necessary but not
+sufficient; without this flag the action finds no `.sig`, skips the
+updater-JSON upload ("Signature not found for the updater JSON"),
+and the release ships unsigned. Two full release attempts (run
+43375646782 attempts 1 and 2, the second with freshly re-saved
+secrets) proved it: secrets present in the step environment, zero
+signing lines in the log. The flag defaults to `false` — always
+verify it is present in the config before any signed release. It
+was added to the 1.1.1 config on 2026-11-13; the next release
+attempt (run #5, new commit + moved tag) is the proof.
+
+**Feed publish checklist (v1.2.0 §3 — run at every release).**
+The 1.1.1 manifest carried tauri-action's generic "See the release
+notes below." — the update prompt showed that instead of the real
+notes. From 1.2.0 on, the feed publish step swaps the notes in:
+
+1. **Copy the signed manifest byte-identical from the GitHub
+   Release.** The release's `latest.json` (produced by
+   tauri-action with `includeUpdaterJson: true`) is the source of
+   truth — download it, do not retype or regenerate it.
+2. **Swap the `notes` field for the release's real notes.** The
+   signatures cover the artifact, not the manifest, so editing
+   `notes` is safe — but touch nothing else: version, URLs, and
+   signatures stay exactly as the release produced them.
+3. **Deploy** the manifest to the feed URL
+   (`https://kova-99837.wasmer.app/updates/kova/latest.json`).
+4. **Verify live:** fetch the feed and confirm the version reads
+   the new release, then decode the manifest's signature and
+   confirm it verifies against the payload (the same check the
+   app performs before install). A deploy that only "looks
+   right" is not verified — the version + decoded signature are
+   the proof.
+5. **Confirm in the app:** the installed previous version's
+   Settings shows the update with the real notes, not the
+   placeholder line.
+
 Nothing in this spec pretends 1.0.0 can update itself.
 
 ## 8. Windows — blocked on the installer decision, with a recommendation

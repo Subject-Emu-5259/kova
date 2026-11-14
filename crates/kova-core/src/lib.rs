@@ -20,6 +20,15 @@
 //!   overrides, favorites, hidden games, launch options, art
 //!   overrides, and launch statistics, merged over a scan with
 //!   [`profiles::apply_profiles`].
+//! * [`perf`] — performance profiles (v1.2.0): the engine-known
+//!   launch-arg preset library, one-tap launch-mode bundles, and
+//!   process-priority handling.
+//! * [`milestones`] — local milestones (v1.2.0): badges computed
+//!   from the player's own history, no server.
+//! * [`state`] — the persistent state model (v1.2.0): the shape of
+//!   `kova-state.json` (shelves, beta, kids, sync, journal, save
+//!   backups, milestones) plus its pure validation, so the app
+//!   crate owns only file I/O and commands.
 //! * [`vdf`] — the hand-rolled Valve KeyValues (VDF/ACF) parser.
 //!
 //! Every scanner produces the same [`Game`] record (with a `source`
@@ -39,16 +48,33 @@ pub mod avok;
 pub mod epic;
 pub mod gog;
 pub mod itch;
+pub mod milestones;
+pub mod perf;
 pub mod profiles;
 pub mod standalone;
+pub mod state;
 pub mod steam;
 pub mod vdf;
 
 pub use app_icon::locate_app_icon;
+pub use state::{
+    builtin_shelves, normalize_beta, normalize_kids, push_journal_entry, today_date_string,
+    unix_timestamp_to_date, validate_shelves, BetaSettings, GamerProfile, JournalEntry,
+    KidsSettings, KovaState, SaveBackup, Shelf, SyncSettings, JOURNAL_CAP,
+    JOURNAL_ENTRY_MAX_CHARS, MAX_SHELVES,
+};
+pub use milestones::{
+    compute_milestones, earned_ids, MilestoneStats, MilestoneStatus, MILESTONE_FINISHED_10,
+    MILESTONE_LAUNCHES_100, MILESTONE_LIBRARY_50, MILESTONE_PLAYTIME_500H, MILESTONE_VARIETY_10,
+};
+pub use perf::{
+    find_preset, resolve_launch_settings, LaunchMode, LaunchSettings, PerfPreset, Priority,
+    PERF_PRESETS, PRESET_NOTE,
+};
 pub use profiles::{
     annotate_game, apply_profiles, favorites_first, fold_profile_into, merge_profiles, profile_key,
-    record_launch, resolve_recent, resolve_recents, visible_games, AnnotatedGame, AnnotatedLibrary,
-    AnnotatedSource, GameProfile, Profiles,
+    record_launch, record_session, resolve_recent, resolve_recents, visible_games, AnnotatedGame,
+    AnnotatedLibrary, AnnotatedSource, GameProfile, Profiles,
 };
 pub use steam::{
     candidates_for_os, default_candidates, library_folders, linux_candidates, locate_steam,
