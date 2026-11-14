@@ -75,15 +75,16 @@ const SOURCE_LABELS = {
 const SOURCE_ORDER = ["steam", "epic", "gog", "itch", "standalone", "avok"];
 const IMAGE_MAX_CHARS = 300000; // ~200 KB image, base64 — the backend cap
 
-// Avok title art, keyed by profile key. The NEW no-text TOW globe
-// (tow-icon-new.png) is canonical — the old globe is retired and
-// referenced nowhere. Files live in app/src/assets/; a missing
+// Avok title art, keyed by profile key. The OW explorer badge
+// (the-open-world-badge.png, transparent) is the real TOW logo —
+// v1.2.1, Dre's correction 2026-11-14; the globe was a misread
+// and is retired. Files live in app/src/assets/; a missing
 // file removes itself on error. The Avok studio mark is NEVER
 // game art: mapped titles skip the bundle-icon layer for exactly
 // that reason (the Avok builds' bundle icon is the studio mark).
 const AVOK_GAME_ART = {
   "avok:dispatch-hq": "../assets/dispatch-hq-badge.png",
-  "avok:the-open-world": "../assets/tow-icon-new.png",
+  "avok:the-open-world": "../assets/the-open-world-badge.png",
 };
 
 // Built-in avatar options, drawn in code — same values as classic
@@ -365,7 +366,7 @@ function demoCall(cmd, args) {
     case "import_state":
       return Promise.resolve(JSON.parse(JSON.stringify(DEMO_STATE)));
     case "check_update":
-      return Promise.resolve({ available: false, version: null, current_version: "1.2.0", notes: null });
+      return Promise.resolve({ available: false, version: null, current_version: "1.2.1", notes: null });
     case "launch_game":
     case "launch_uri":
     case "notify_update_available":

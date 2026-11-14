@@ -51,12 +51,12 @@ const SOURCE_LABELS = {
 // a mapped record's bundle icon would show the studio mark
 // instead of the game's own logo. The mapped files are Mac-side
 // build inputs living in app/src/ (see README, slice 5.2) — they
-// are NOT in this repo tree. The Open World entry is the NEW
-// no-text globe (v1.2.0 §5, Dre's pick 2026-11-13): the old globe
-// is retired and referenced nowhere here.
+// are NOT in this repo tree. The Open World entry is the OW
+// explorer badge (v1.2.1: Dre's correction 2026-11-14 — the badge
+// is the real TOW logo; the globe was a misread and is retired).
 const AVOK_GAME_ART = {
   "avok:dispatch-hq": "dispatch-hq-badge.png",
-  "avok:the-open-world": "tow-icon-new.png",
+  "avok:the-open-world": "the-open-world-badge.png",
 };
 
 function avokGameArtFile(game) {
