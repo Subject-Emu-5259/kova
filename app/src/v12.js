@@ -13,6 +13,8 @@
 //   set_shelves(shelves) / set_beta(beta) / set_kids(kids) -> state
 //   set_sync_folder(folder) -> state; push_state_to_sync() -> sync
 //   pull_state_from_sync() -> state (LAST-WRITE-WINS — confirm first)
+//   set_sync_enabled(enabled) -> state (v1.3.3; push/pull refuse while off)
+//   set_save_backup_keep(keep) -> state (v1.3.3; server clamps 1..=50)
 //   add_journal_entry(game_key,text) -> entries; get_journal()
 //   backup_saves(game_key) / list_save_backups(game_key)
 //   restore_save(game_key,backup_name) (safety-net backup automatic)
@@ -51,6 +53,7 @@
   var shelfCreateBtn = document.getElementById("shelf-create");
   var kidsSettingsEl = document.getElementById("kids-settings");
   var syncSettingsEl = document.getElementById("sync-settings");
+  var saveBackupsSettingsEl = document.getElementById("save-backups-settings");
   var stateExportBtn = document.getElementById("state-export");
   var stateImportBtn = document.getElementById("state-import-btn");
   var stateImportInput = document.getElementById("state-import");
@@ -88,7 +91,15 @@
   }
 
   function syncSettings() {
-    return state().sync || { enabled: false, folder: null, last_push_at: null, last_pull_at: null };
+    return state().sync || { enabled: true, folder: null, last_push_at: null, last_pull_at: null };
+  }
+
+  // v1.3.3 — snapshots kept per game. 0 / missing / non-numeric
+  // behaves as 5; the backend clamps to 1..=50 on save.
+  function saveBackupKeep() {
+    var keep = state().save_backup_keep;
+    if (typeof keep !== "number" || keep < 1) return 5;
+    return Math.min(50, Math.floor(keep));
   }
 
   // Shelves in the player's order: beta.shelf_order first (when
@@ -1806,12 +1817,41 @@
     if (!syncSettingsEl) return;
     syncSettingsEl.innerHTML = "";
     var sync = syncSettings();
+    var toggleRow = el("label", "toggle-row");
+    var toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.checked = Boolean(sync.enabled);
+    toggle.addEventListener("change", function () {
+      if (!invoke) return;
+      invoke("set_sync_enabled", { enabled: toggle.checked })
+        .then(function (updated) {
+          applyState(updated);
+          setStatus(
+            toggle.checked
+              ? "Cloud sync is on — push and pull are available."
+              : "Cloud sync is off — push and pull are paused. Your sync folder is kept.",
+            false
+          );
+        })
+        .catch(function (err) {
+          setStatus("Could not change the sync setting: " + err, true);
+        });
+    });
+    toggleRow.appendChild(toggle);
+    toggleRow.appendChild(document.createTextNode("Enable cloud sync"));
+    syncSettingsEl.appendChild(toggleRow);
+    if (!sync.enabled) {
+      syncSettingsEl.appendChild(
+        el("p", "profile-note", "Sync is off — push and pull are paused. Your sync folder is kept.")
+      );
+    }
     var folderInput = document.createElement("input");
     folderInput.className = "text-input";
     folderInput.type = "text";
     folderInput.value = sync.folder || "";
     folderInput.placeholder = "Sync folder, e.g. /Users/you/Library/Mobile Documents/com~apple~CloudDocs/KOVA";
     folderInput.spellcheck = false;
+    folderInput.disabled = !sync.enabled;
     syncSettingsEl.appendChild(profileField("Sync folder", folderInput, null));
     var statusLine = el("p", "profile-note", "");
     function refreshStatus(current) {
@@ -1828,6 +1868,10 @@
     var actions = el("div", "profile-actions");
     var saveBtn = el("button", null, "Save folder");
     saveBtn.type = "button";
+    // v1.3.3: saving the folder is a dead control while sync is off
+    // (the input is disabled) — match the beta shell, which disables
+    // its Save folder button too.
+    saveBtn.disabled = !sync.enabled;
     saveBtn.addEventListener("click", function () {
       if (!invoke) return;
       invoke("set_sync_folder", { folder: folderInput.value.trim() || null })
@@ -1842,7 +1886,7 @@
     actions.appendChild(saveBtn);
     var pushBtn = el("button", "ghost", "Push now");
     pushBtn.type = "button";
-    pushBtn.disabled = !sync.folder;
+    pushBtn.disabled = !sync.folder || !sync.enabled;
     pushBtn.addEventListener("click", function () {
       if (!invoke) return;
       pushBtn.disabled = true;
@@ -1862,7 +1906,7 @@
     actions.appendChild(pushBtn);
     var pullBtn = el("button", "ghost", "Pull now");
     pullBtn.type = "button";
-    pullBtn.disabled = !sync.folder;
+    pullBtn.disabled = !sync.folder || !sync.enabled;
     pullBtn.addEventListener("click", function () {
       if (!invoke) return;
       if (
@@ -1889,6 +1933,43 @@
     });
     actions.appendChild(pullBtn);
     syncSettingsEl.appendChild(actions);
+  }
+
+  // v1.3.3 — how many save snapshots to keep per game. The
+  // backend prunes to the newest N when the next backup is taken.
+  function renderSaveBackupSettings() {
+    if (!saveBackupsSettingsEl) return;
+    saveBackupsSettingsEl.innerHTML = "";
+    var keepInput = document.createElement("input");
+    keepInput.className = "text-input";
+    keepInput.type = "number";
+    keepInput.min = "1";
+    keepInput.max = "50";
+    keepInput.value = String(saveBackupKeep());
+    saveBackupsSettingsEl.appendChild(profileField("Keep the newest snapshots per game", keepInput, null));
+    saveBackupsSettingsEl.appendChild(
+      el("p", "profile-note", "Older snapshots are removed when the next backup is taken.")
+    );
+    var actions = el("div", "profile-actions");
+    var saveBtn = el("button", null, "Save");
+    saveBtn.type = "button";
+    saveBtn.addEventListener("click", function () {
+      if (!invoke) return;
+      var raw = keepInput.value.trim();
+      var keep = Math.floor(Number(raw));
+      if (raw === "" || Number.isNaN(keep)) keep = 5;
+      keep = Math.max(1, Math.min(50, keep));
+      invoke("set_save_backup_keep", { keep: keep })
+        .then(function (updated) {
+          applyState(updated);
+          setStatus("Keeping the newest " + keep + " snapshot" + (keep === 1 ? "" : "s") + " per game.", false);
+        })
+        .catch(function (err) {
+          setStatus("Could not save the backup setting: " + err, true);
+        });
+    });
+    actions.appendChild(saveBtn);
+    saveBackupsSettingsEl.appendChild(actions);
   }
 
   var BETA_FEEDBACK_KEY = "kova-beta-feedback";
@@ -2086,6 +2167,7 @@
     renderShelvesManage();
     renderKidsSettings();
     renderSyncSettings();
+    renderSaveBackupSettings();
     renderBetaSettings();
   }
 

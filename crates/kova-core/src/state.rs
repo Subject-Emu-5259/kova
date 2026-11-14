@@ -345,11 +345,12 @@ fn is_date_shaped(value: &str) -> bool {
 /// Last-write-wins, no merge: a pull discards local changes made
 /// since the last push, and a push overwrites whatever the folder
 /// held. The UI must say so before either runs.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SyncSettings {
-    /// Whether sync is enabled (gates future automatic sync;
-    /// manual push/pull work regardless).
-    #[serde(default)]
+    /// Whether sync is enabled. On by default (v1.3.3): while
+    /// off, push and pull are refused — the user turns it on in
+    /// Settings to sync.
+    #[serde(default = "default_sync_enabled")]
     pub enabled: bool,
     /// The sync folder (a path on the user's cloud drive), or
     /// `None` when no folder is set.
@@ -361,6 +362,25 @@ pub struct SyncSettings {
     /// When the last pull ran (Unix epoch seconds).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_pull_at: Option<i64>,
+}
+
+/// Sync is on by default (v1.3.3): a state file that never wrote
+/// `enabled` — every file written before v1.3.3 — loads with sync
+/// on, so existing syncers (folder set, `enabled` unset) keep
+/// syncing unchanged.
+fn default_sync_enabled() -> bool {
+    true
+}
+
+impl Default for SyncSettings {
+    fn default() -> Self {
+        SyncSettings {
+            enabled: default_sync_enabled(),
+            folder: None,
+            last_push_at: None,
+            last_pull_at: None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -442,6 +462,50 @@ pub struct SaveBackup {
     pub backup_name: String,
 }
 
+/// How many save backups to keep per game when the state never
+/// said otherwise (v1.3.3).
+pub const DEFAULT_SAVE_BACKUP_KEEP: usize = 5;
+/// The most save backups a game may keep (the setter clamps to
+/// this).
+pub const MAX_SAVE_BACKUP_KEEP: usize = 50;
+
+/// The serde default for [`KovaState::save_backup_keep`]: a state
+/// file written before v1.3.3 loads with the default retention.
+fn default_save_backup_keep() -> usize {
+    DEFAULT_SAVE_BACKUP_KEEP
+}
+
+/// Pick which of one game's backups to drop so only the `keep`
+/// most recent survive (v1.3.3 retention). Returns the
+/// `backup_name`s to delete. Pure: the caller deletes the
+/// snapshot folders and drops the records.
+///
+/// Selection is by `backed_up_at`, newest first, with insertion
+/// order breaking ties — when several backups share a timestamp,
+/// the earliest-inserted go first and the last-inserted (the
+/// just-taken backup) always survives. `keep` is clamped to at
+/// least 1, so the newest backup is never pruned even when the
+/// stored keep is 0. Returns nothing when the game has `keep`
+/// or fewer backups. Callers pass only one game's backups —
+/// retention never prunes across games.
+pub fn backups_to_prune(backups: &[SaveBackup], keep: usize) -> Vec<String> {
+    let keep = keep.max(1);
+    if backups.len() <= keep {
+        return Vec::new();
+    }
+    // Indices sorted by timestamp ascending; the sort is stable,
+    // so ties keep insertion order and the earliest-inserted
+    // among equals are dropped first. The first `len - keep`
+    // indices are the oldest.
+    let mut indices: Vec<usize> = (0..backups.len()).collect();
+    indices.sort_by_key(|&i| backups[i].backed_up_at);
+    let drop_count = backups.len() - keep;
+    indices[..drop_count]
+        .iter()
+        .map(|&i| backups[i].backup_name.clone())
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // The whole state file
 // ---------------------------------------------------------------------------
@@ -450,7 +514,7 @@ pub struct SaveBackup {
 /// dir). Every field is serde-defaulted: any earlier version's
 /// file loads clean, with the fields it never wrote at their
 /// defaults.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KovaState {
     /// Recently launched games, most recent first, de-duplicated by
     /// (source, id). Powers the Quick Resume rows — "recently
@@ -501,10 +565,39 @@ pub struct KovaState {
     /// live under the app data dir in `save-backups/`.
     #[serde(default)]
     pub save_backups: Vec<SaveBackup>,
+    /// How many save backups to keep per game (v1.3.3). When a
+    /// new backup is taken, the oldest backups beyond this count
+    /// are deleted from disk and their records dropped. Defaults
+    /// to [`DEFAULT_SAVE_BACKUP_KEEP`]; the setter clamps to
+    /// 1..=[`MAX_SAVE_BACKUP_KEEP`], and the prune helper treats
+    /// 0 as 1, so the newest backup is never pruned.
+    #[serde(default = "default_save_backup_keep")]
+    pub save_backup_keep: usize,
     /// Earned milestone ids (v1.2.0 §10). Stored so a badge never
     /// re-fires: once earned, the id stays here.
     #[serde(default)]
     pub milestones: Vec<String>,
+}
+
+impl Default for KovaState {
+    fn default() -> Self {
+        KovaState {
+            recents: Vec::new(),
+            standalone_folders: Vec::new(),
+            profiles: Profiles::default(),
+            show_hidden_games: false,
+            gamer_profile: GamerProfile::default(),
+            wishlist: Vec::new(),
+            shelves: Vec::new(),
+            beta: BetaSettings::default(),
+            kids: KidsSettings::default(),
+            sync: SyncSettings::default(),
+            journal: Vec::new(),
+            save_backups: Vec::new(),
+            save_backup_keep: default_save_backup_keep(),
+            milestones: Vec::new(),
+        }
+    }
 }
 
 impl KovaState {
@@ -609,7 +702,12 @@ mod tests {
         assert_eq!(state.beta.accent, "cyan");
         assert_eq!(state.beta.density, "comfortable");
         assert!(!state.kids.enabled);
-        assert!(!state.sync.enabled);
+        // v1.3.3 flip: sync defaults ON. A pre-v1.3.3 file never
+        // wrote `enabled` (existing syncers have a folder set and
+        // `enabled` unset/false) — default-true keeps their sync
+        // working unchanged.
+        assert!(state.sync.enabled);
+        assert_eq!(state.save_backup_keep, DEFAULT_SAVE_BACKUP_KEEP);
         assert!(state.journal.is_empty());
         assert!(state.save_backups.is_empty());
         assert!(state.milestones.is_empty());
@@ -834,6 +932,106 @@ mod tests {
         assert_eq!(
             journal.last().unwrap().text,
             format!("entry {}", JOURNAL_CAP + 24)
+        );
+    }
+
+    #[test]
+    fn v120_state_without_sync_enabled_or_keep_loads_with_v133_defaults() {
+        // A v1.2.0 file from an existing syncer: folder set,
+        // `enabled` never written, no `save_backup_keep` at all.
+        let state: KovaState =
+            serde_json::from_str(r#"{"sync": {"folder": "/cloud/kova"}, "save_backups": []}"#)
+                .unwrap();
+        assert!(state.sync.enabled, "sync defaults on (v1.3.3 flip)");
+        assert_eq!(state.sync.folder.as_deref(), Some("/cloud/kova"));
+        assert_eq!(state.save_backup_keep, DEFAULT_SAVE_BACKUP_KEEP);
+        // An explicit false is still honored — the default only
+        // fills in what the file never wrote.
+        let state: KovaState =
+            serde_json::from_str(r#"{"sync": {"enabled": false}, "save_backup_keep": 2}"#).unwrap();
+        assert!(!state.sync.enabled);
+        assert_eq!(state.save_backup_keep, 2);
+    }
+
+    fn test_backup(game_key: &str, backed_up_at: i64, backup_name: &str) -> SaveBackup {
+        SaveBackup {
+            game_key: game_key.to_string(),
+            backed_up_at,
+            size_bytes: 100,
+            backup_name: backup_name.to_string(),
+        }
+    }
+
+    #[test]
+    fn prune_selection_keeps_the_n_newest_and_nothing_when_under_keep() {
+        let backups = vec![
+            test_backup("steam:730", 100, "backup-100"),
+            test_backup("steam:730", 200, "backup-200"),
+            test_backup("steam:730", 300, "backup-300"),
+            test_backup("steam:730", 400, "backup-400"),
+        ];
+        assert_eq!(
+            backups_to_prune(&backups, 2),
+            vec!["backup-100", "backup-200"],
+            "the two oldest go, the two newest stay"
+        );
+        assert!(
+            backups_to_prune(&backups, 4).is_empty(),
+            "count == keep prunes nothing"
+        );
+        assert!(
+            backups_to_prune(&backups, 10).is_empty(),
+            "count < keep prunes nothing"
+        );
+        assert!(backups_to_prune(&[], 5).is_empty());
+    }
+
+    #[test]
+    fn prune_selection_keeps_the_newest_on_ties() {
+        // Three backups share one timestamp (same-second takes):
+        // insertion order breaks the tie, so the earliest-inserted
+        // go first and the last-inserted — the just-taken backup —
+        // always survives.
+        let backups = vec![
+            test_backup("steam:730", 100, "backup-100"),
+            test_backup("steam:730", 100, "backup-100-1"),
+            test_backup("steam:730", 100, "backup-100-2"),
+            test_backup("steam:730", 100, "backup-100-3"),
+        ];
+        assert_eq!(
+            backups_to_prune(&backups, 1),
+            vec!["backup-100", "backup-100-1", "backup-100-2"],
+            "only the last-inserted backup survives a full tie"
+        );
+        // A keep of 0 still keeps the newest (clamped to 1).
+        assert_eq!(
+            backups_to_prune(&backups, 0),
+            vec!["backup-100", "backup-100-1", "backup-100-2"],
+        );
+    }
+
+    #[test]
+    fn prune_selection_only_ever_names_backups_it_was_given() {
+        // The caller passes one game's backups; the selection can
+        // only name backups from that slice — another game's
+        // backups are never in the input, so never in the drop
+        // list.
+        let other_game = vec![
+            test_backup("avok:dispatch-hq", 50, "backup-50"),
+            test_backup("avok:dispatch-hq", 60, "backup-60"),
+        ];
+        let this_game = vec![
+            test_backup("steam:730", 100, "backup-100"),
+            test_backup("steam:730", 200, "backup-200"),
+            test_backup("steam:730", 300, "backup-300"),
+        ];
+        let dropped = backups_to_prune(&this_game, 1);
+        assert_eq!(dropped, vec!["backup-100", "backup-200"]);
+        assert!(
+            dropped
+                .iter()
+                .all(|name| !other_game.iter().any(|b| &b.backup_name == name)),
+            "no other game's backup is ever named"
         );
     }
 

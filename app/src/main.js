@@ -159,9 +159,10 @@ let appState = {
   shelves: [],
   beta: { opted_in: false, ui: "classic", accent: "cyan", density: "comfortable", shelf_order: [] },
   kids: { enabled: false, allowed_keys: [], daily_limit_minutes: null, minutes_used_today: 0, used_date: "" },
-  sync: { enabled: false, folder: null, last_push_at: null, last_pull_at: null },
+  sync: { enabled: true, folder: null, last_push_at: null, last_pull_at: null },
   journal: [],
   save_backups: [],
+  save_backup_keep: 5,
   milestones: [],
 };
 let activeFilter = "all";
@@ -262,6 +263,7 @@ function normalizeState(state) {
       shelves: [],
       journal: [],
       save_backups: [],
+      save_backup_keep: 5,
       milestones: [],
     },
     state || {}
@@ -279,9 +281,16 @@ function normalizeState(state) {
     (state && state.kids) || {}
   );
   normalized.sync = Object.assign(
-    { enabled: false, folder: null, last_push_at: null, last_pull_at: null },
+    { enabled: true, folder: null, last_push_at: null, last_pull_at: null },
     (state && state.sync) || {}
   );
+  // v1.3.3 — how many save snapshots to keep per game. A state
+  // file without the field, or with a 0 / non-numeric value,
+  // behaves as 5; the backend clamps to 1..=50 on save.
+  normalized.save_backup_keep =
+    typeof normalized.save_backup_keep === "number" && normalized.save_backup_keep >= 1
+      ? Math.min(50, Math.floor(normalized.save_backup_keep))
+      : 5;
   return normalized;
 }
 
@@ -2069,9 +2078,14 @@ let pendingUpdateVersion = null;
 // feed's notes still drive the available-update display. Bump
 // APP_VERSION with each release and add its notes at the top of
 // RELEASE_ORDER.
-const APP_VERSION = "1.3.2";
-const RELEASE_ORDER = ["1.3.2", "1.3.1", "1.3.0", "1.2.1", "1.2.0"];
+const APP_VERSION = "1.3.3";
+const RELEASE_ORDER = ["1.3.3", "1.3.2", "1.3.1", "1.3.0", "1.2.1", "1.2.0"];
 const RELEASE_NOTES = {
+  "1.3.3": [
+    "Your wishlist now shows in the beta Profile, not just Classic.",
+    "Cloud sync gets an on/off switch — it only runs when you want it to.",
+    "Save backups prune themselves now, keeping the newest snapshots per game.",
+  ],
   "1.3.2": [
     "The dev application now opens from a button instead of sitting on the Store page, and the review wording is cleaned up.",
   ],

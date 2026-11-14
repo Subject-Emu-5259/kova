@@ -233,7 +233,7 @@ const DEMO_STATE = {
   ],
   beta: { opted_in: true, ui: "beta", accent: "cyan", density: "comfortable", shelf_order: [] },
   kids: { enabled: false, allowed_keys: [], daily_limit_minutes: null, minutes_used_today: 0, used_date: null },
-  sync: { enabled: false, folder: null, last_push_at: null, last_pull_at: null },
+  sync: { enabled: true, folder: null, last_push_at: null, last_pull_at: null },
   journal: [
     { game_key: "steam:1145360", timestamp: DEMO_NOW - 3600, text: "Beat Theseus and Asterius first try tonight. The rail with lightning rod is the run." },
     { game_key: "steam:413150", timestamp: DEMO_NOW - 86400 * 2, text: "Finished the greenhouse. Ancient fruit goes in tomorrow." },
@@ -242,6 +242,7 @@ const DEMO_STATE = {
   save_backups: [
     { game_key: "steam:413150", backed_up_at: DEMO_NOW - 86400, size_bytes: 48210, backup_name: "backup-1792000000" },
   ],
+  save_backup_keep: 5,
   milestones: ["first-launch", "ten-launches"],
 };
 const DEMO_LIBRARY = {
@@ -356,10 +357,26 @@ function demoCall(cmd, args) {
     case "set_sync_folder":
       DEMO_STATE.sync.folder = args.folder || null;
       return Promise.resolve(JSON.parse(JSON.stringify(DEMO_STATE)));
+    case "set_sync_enabled":
+      DEMO_STATE.sync.enabled = Boolean(args.enabled);
+      return Promise.resolve(JSON.parse(JSON.stringify(DEMO_STATE)));
+    case "set_save_backup_keep": {
+      const n = Number(args.keep);
+      DEMO_STATE.save_backup_keep = Number.isFinite(n)
+        ? Math.min(50, Math.max(1, Math.floor(n)))
+        : 5;
+      return Promise.resolve(JSON.parse(JSON.stringify(DEMO_STATE)));
+    }
     case "push_state_to_sync":
+      if (!DEMO_STATE.sync.enabled) {
+        return Promise.reject(new Error("sync is off — turn it on in Settings to push and pull."));
+      }
       DEMO_STATE.sync.last_push_at = DEMO_NOW;
       return Promise.resolve(JSON.parse(JSON.stringify(DEMO_STATE.sync)));
     case "pull_state_from_sync":
+      if (!DEMO_STATE.sync.enabled) {
+        return Promise.reject(new Error("sync is off — turn it on in Settings to push and pull."));
+      }
       DEMO_STATE.sync.last_pull_at = DEMO_NOW;
       return Promise.resolve(JSON.parse(JSON.stringify(DEMO_STATE)));
     case "add_journal_entry": {
@@ -374,7 +391,7 @@ function demoCall(cmd, args) {
     case "import_state":
       return Promise.resolve(JSON.parse(JSON.stringify(DEMO_STATE)));
     case "check_update":
-      return Promise.resolve({ available: false, version: null, current_version: "1.3.2", notes: null });
+      return Promise.resolve({ available: false, version: null, current_version: "1.3.3", notes: null });
     case "launch_game":
     case "launch_uri":
     case "notify_update_available":
@@ -602,9 +619,10 @@ function defaultState() {
     ],
     beta: { opted_in: false, ui: "classic", accent: "cyan", density: "comfortable", shelf_order: [] },
     kids: { enabled: false, allowed_keys: [], daily_limit_minutes: null, minutes_used_today: 0, used_date: null },
-    sync: { enabled: false, folder: null, last_push_at: null, last_pull_at: null },
+    sync: { enabled: true, folder: null, last_push_at: null, last_pull_at: null },
     journal: [],
     save_backups: [],
+    save_backup_keep: 5,
     milestones: [],
   };
 }
@@ -624,7 +642,7 @@ function normalizeState(state) {
     (state && state.kids) || {}
   );
   normalized.sync = Object.assign(
-    { enabled: false, folder: null, last_push_at: null, last_pull_at: null },
+    { enabled: true, folder: null, last_push_at: null, last_pull_at: null },
     (state && state.sync) || {}
   );
   normalized.shelves = Array.isArray(normalized.shelves) ? normalized.shelves : base.shelves;
@@ -632,6 +650,11 @@ function normalizeState(state) {
   normalized.recents = normalized.recents || [];
   normalized.journal = normalized.journal || [];
   normalized.save_backups = normalized.save_backups || [];
+  // Save-backup keep: 0, missing, or non-numeric means the default
+  // 5 (same rule as classic); the server clamps 1..=50.
+  const keep = Number(normalized.save_backup_keep);
+  normalized.save_backup_keep =
+    Number.isFinite(keep) && keep >= 1 ? Math.min(50, Math.floor(keep)) : 5;
   return normalized;
 }
 function gamerProfile() {
@@ -1449,6 +1472,12 @@ function renderDetail() {
     }
   });
   actions.appendChild(favBtn);
+  // Wishlist — Avok titles only, like classic.
+  if (game.source === "avok") {
+    actions.appendChild(
+      wishlistToggleButton(game.key, displayName(game), renderDetail)
+    );
+  }
   const hideBtn = el("button", "btn", game.hidden ? "Unhide" : "Hide");
   hideBtn.type = "button";
   hideBtn.addEventListener("click", async () => {
@@ -2364,6 +2393,47 @@ function applicationMailto(app) {
   );
 }
 
+// ---------------------------------------------------------------- wishlist
+// The wishlist is Avok titles only (same rule as classic: the
+// backend drops non-Avok keys). Keys are profile keys
+// ("avok:<id>"); the store toggle builds the key from the listing
+// id, the detail page and the profile list use the game's own key.
+// One shared toggle, so the store, the detail page, and the
+// profile list all behave the same — and the same wishlist shows
+// in both shells, because both read the one shared state.
+function isWishlistedKey(key) {
+  return (appState.wishlist || []).includes(key);
+}
+
+async function toggleWishlistKey(key, name, rerender) {
+  const list = (appState.wishlist || []).slice();
+  const at = list.indexOf(key);
+  if (at >= 0) list.splice(at, 1);
+  else list.push(key);
+  const updated = await call("set_wishlist", { wishlist: list });
+  if (updated) {
+    appState = normalizeState(updated);
+    setStatus(
+      at >= 0 ? name + " removed from your wishlist." : name + " added to your wishlist."
+    );
+    if (rerender) rerender();
+  } else {
+    setStatus("Could not update the wishlist.", true);
+  }
+}
+
+function wishlistToggleButton(key, name, rerender) {
+  const wished = isWishlistedKey(key);
+  const btn = el("button", "btn", wished ? "Wishlisted" : "Wishlist");
+  btn.type = "button";
+  btn.setAttribute("aria-pressed", wished ? "true" : "false");
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleWishlistKey(key, name, rerender);
+  });
+  return btn;
+}
+
 async function renderStore() {
   const root = views.store;
   clear(root);
@@ -2459,6 +2529,14 @@ async function renderStore() {
         });
         actions.appendChild(btn);
       });
+      // Wishlist — Avok titles only, like classic. The key is the
+      // listing's Avok profile key; the backend drops anything
+      // that is not an Avok key.
+      if (listing.developer === "Avok Interactive") {
+        actions.appendChild(
+          wishlistToggleButton("avok:" + listing.id, listing.title, renderStore)
+        );
+      }
       body.appendChild(actions);
       card.appendChild(body);
       grid.appendChild(card);
@@ -2592,6 +2670,56 @@ function renderProfile() {
   });
   statsCard.appendChild(strip);
   layout.appendChild(statsCard);
+
+  // Wishlist — the same list classic shows, from the same shared
+  // state. Keys resolve through the library (gameByKey), like
+  // classic; hidden games stay out.
+  const wishlistCard = el("div", "card span-2col");
+  wishlistCard.appendChild(el("h3", null, "Wishlist"));
+  wishlistCard.appendChild(
+    el("p", "card-sub", "Avok titles you want to play.")
+  );
+  const wished = (appState.wishlist || [])
+    .map((key) => gameByKey(key))
+    .filter(Boolean)
+    .filter((game) => !game.hidden);
+  if (wished.length === 0) {
+    wishlistCard.appendChild(
+      el(
+        "p",
+        "card-sub",
+        "No Avok titles on your wishlist yet — add one from the Avok Store or a game's page."
+      )
+    );
+  } else {
+    const wishlistList = el("div");
+    wished.forEach((game) => {
+      const row = el("div", "backup-row");
+      const nameBtn = el("button", "text-btn", displayName(game));
+      nameBtn.type = "button";
+      nameBtn.addEventListener("click", () => go("detail", game.key));
+      row.appendChild(nameBtn);
+      const removeBtn = el("button", "btn btn-sm", "Remove");
+      removeBtn.type = "button";
+      removeBtn.style.marginLeft = "auto";
+      removeBtn.setAttribute("aria-label", "Remove " + displayName(game) + " from wishlist");
+      removeBtn.addEventListener("click", async () => {
+        const list = (appState.wishlist || []).filter((key) => key !== game.key);
+        const updated = await call("set_wishlist", { wishlist: list });
+        if (updated) {
+          appState = normalizeState(updated);
+          setStatus(displayName(game) + " removed from your wishlist.");
+          renderProfile();
+        } else {
+          setStatus("Could not update the wishlist.", true);
+        }
+      });
+      row.appendChild(removeBtn);
+      wishlistList.appendChild(row);
+    });
+    wishlistCard.appendChild(wishlistList);
+  }
+  layout.appendChild(wishlistCard);
 
   // Milestones.
   const milestonesCard = el("div", "card");
@@ -2924,9 +3052,8 @@ async function loadMilestones(host) {
 // layout (the dealt pattern): a label column beside a panel, split
 // by full-width rules. One save model per panel: toggles and
 // pickers save themselves; forms have their own Save button.
-// NOTE: there is no command to toggle sync.enabled — the folder,
-// push, and pull are the controls, and manual push/pull work
-// regardless of the flag.
+// NOTE (v1.3.3): sync.enabled is a real toggle now —
+// set_sync_enabled flips it, and push/pull refuse while it is off.
 
 function settingsSection(root, title, description, summary) {
   const section = el("div", "settings-section");
@@ -3118,12 +3245,42 @@ function renderSettings() {
       " " +
       (sync.last_pull_at ? "Last pull " + fmtDateTime(sync.last_pull_at) + "." : "Never pulled.")
   );
+  syncPanel.appendChild(
+    switchRow(
+      "Enable cloud sync",
+      "Push and pull your state through your own cloud folder.",
+      Boolean(sync.enabled),
+      async (next, toggle) => {
+        const updated = await call("set_sync_enabled", { enabled: next });
+        if (updated) {
+          appState = normalizeState(updated);
+          toggle.setAttribute("aria-checked", next ? "true" : "false");
+          setStatus(next ? "Cloud sync is on." : "Cloud sync is off.");
+          renderSettings();
+        } else {
+          setStatus("Could not change the sync setting.", true);
+        }
+      },
+      sync.enabled ? "On" : "Off"
+    )
+  );
+  if (!sync.enabled) {
+    const offNote = el(
+      "p",
+      "panel-note",
+      "Sync is off — push and pull are paused. Your sync folder is kept."
+    );
+    offNote.style.marginTop = "12px";
+    syncPanel.appendChild(offNote);
+  }
   const syncField = el("div", "field");
+  syncField.style.marginTop = "20px";
   syncField.appendChild(el("label", null, "Sync folder"));
   const syncInput = el("input", "input");
   syncInput.type = "text";
   syncInput.placeholder = "/Users/you/Library/Mobile Documents/com~apple~CloudDocs/KOVA";
   syncInput.value = sync.folder || "";
+  syncInput.disabled = !sync.enabled;
   syncInput.setAttribute("aria-label", "Sync folder path");
   syncField.appendChild(syncInput);
   syncField.appendChild(
@@ -3133,6 +3290,7 @@ function renderSettings() {
   const syncActions = el("div", "panel-actions");
   const saveSyncBtn = el("button", "btn", "Save folder");
   saveSyncBtn.type = "button";
+  saveSyncBtn.disabled = !sync.enabled;
   saveSyncBtn.addEventListener("click", async () => {
     const updated = await call("set_sync_folder", { folder: syncInput.value.trim() || null });
     if (updated) {
@@ -3145,7 +3303,7 @@ function renderSettings() {
   });
   const pushBtn = el("button", "btn", "Push now");
   pushBtn.type = "button";
-  pushBtn.disabled = !sync.folder;
+  pushBtn.disabled = !sync.enabled || !sync.folder;
   pushBtn.addEventListener("click", async () => {
     const result = await call("push_state_to_sync");
     if (result) {
@@ -3158,7 +3316,7 @@ function renderSettings() {
   });
   const pullBtn = el("button", "btn", "Pull now");
   pullBtn.type = "button";
-  pullBtn.disabled = !sync.folder;
+  pullBtn.disabled = !sync.enabled || !sync.folder;
   pullBtn.addEventListener("click", async () => {
     if (
       !window.confirm(
@@ -3182,6 +3340,46 @@ function renderSettings() {
   syncActions.appendChild(pushBtn);
   syncActions.appendChild(pullBtn);
   syncPanel.appendChild(syncActions);
+
+  // Save backups — how many snapshots per game KOVA keeps. The
+  // server prunes to the newest N when the next backup is taken.
+  const keepCount = appState.save_backup_keep || 5;
+  const backupsPanel = settingsSection(
+    root,
+    "Save backups",
+    "KOVA snapshots a game's saves when you back them up from its page. This caps how many snapshots each game keeps.",
+    "Keeping the newest " + keepCount + " snapshot" + (keepCount === 1 ? "" : "s") + " per game."
+  );
+  const keepField = el("div", "field");
+  keepField.appendChild(el("label", null, "Keep the newest snapshots per game"));
+  const keepInput = el("input", "input");
+  keepInput.type = "number";
+  keepInput.min = "1";
+  keepInput.max = "50";
+  keepInput.value = String(keepCount);
+  keepInput.setAttribute("aria-label", "Snapshots to keep per game");
+  keepField.appendChild(keepInput);
+  keepField.appendChild(
+    el("p", "hint", "Older snapshots are removed when the next backup is taken.")
+  );
+  backupsPanel.appendChild(keepField);
+  const keepActions = el("div", "panel-actions");
+  const saveKeepBtn = el("button", "btn", "Save");
+  saveKeepBtn.type = "button";
+  saveKeepBtn.addEventListener("click", async () => {
+    const raw = parseInt(keepInput.value, 10);
+    const keep = Number.isFinite(raw) ? Math.min(50, Math.max(1, raw)) : 5;
+    const updated = await call("set_save_backup_keep", { keep });
+    if (updated) {
+      appState = normalizeState(updated);
+      setStatus("Keeping the newest " + appState.save_backup_keep + " snapshots per game.");
+      renderSettings();
+    } else {
+      setStatus("Could not save that setting.", true);
+    }
+  });
+  keepActions.appendChild(saveKeepBtn);
+  backupsPanel.appendChild(keepActions);
 
   // State backup / restore.
   const backupPanel = settingsSection(

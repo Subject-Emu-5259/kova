@@ -58,10 +58,11 @@ pub mod vdf;
 
 pub use app_icon::locate_app_icon;
 pub use state::{
-    builtin_shelves, normalize_beta, normalize_kids, push_journal_entry, today_date_string,
-    unix_timestamp_to_date, validate_shelves, BetaSettings, GamerProfile, JournalEntry,
-    KidsSettings, KovaState, SaveBackup, Shelf, SyncSettings, JOURNAL_CAP,
-    JOURNAL_ENTRY_MAX_CHARS, MAX_SHELVES,
+    backups_to_prune, builtin_shelves, normalize_beta, normalize_kids, push_journal_entry,
+    today_date_string, unix_timestamp_to_date, validate_shelves, BetaSettings, GamerProfile,
+    JournalEntry, KidsSettings, KovaState, SaveBackup, Shelf, SyncSettings,
+    DEFAULT_SAVE_BACKUP_KEEP, JOURNAL_CAP, JOURNAL_ENTRY_MAX_CHARS, MAX_SAVE_BACKUP_KEEP,
+    MAX_SHELVES,
 };
 pub use milestones::{
     compute_milestones, earned_ids, MilestoneStats, MilestoneStatus, MILESTONE_FINISHED_10,

@@ -75,6 +75,10 @@
 //!   / `restore_save` (save-file snapshots under the app data
 //!   dir), `get_milestones` (local badges from the player's own
 //!   history).
+//! * v1.3.3 state commands: `set_sync_enabled` (sync on/off —
+//!   while off, push and pull are refused; on by default),
+//!   `set_save_backup_keep` (per-game backup retention, 1..=50;
+//!   pruning happens when a backup is taken).
 //! * v1.2.0 launch-support commands: `get_perf_presets` (the
 //!   engine-known launch-arg preset library), `get_active_session`
 //!   (the session timer: what is running now and for how long),
@@ -593,14 +597,28 @@ fn set_sync_folder(
     Ok(state)
 }
 
+/// Turn sync on or off and return the updated state. While off,
+/// push and pull are refused (see `push_state_to_sync` /
+/// `pull_state_from_sync`); the folder setting is untouched.
+#[tauri::command]
+fn set_sync_enabled(app: tauri::AppHandle, enabled: bool) -> Result<KovaState, String> {
+    let mut state = load_state(&app);
+    state.sync.enabled = enabled;
+    save_state(&app, &state)?;
+    Ok(state)
+}
+
 /// Push the current state into the sync folder and return the
 /// updated sync settings (with `last_push_at` stamped). Requires
-/// a folder; `sync.enabled` does not gate a manual push — the
-/// user asked for it. Last-write-wins: the push overwrites
-/// whatever the folder held.
+/// a folder, and requires sync to be enabled — while off, the
+/// push is refused (turn it on in Settings). Last-write-wins:
+/// the push overwrites whatever the folder held.
 #[tauri::command]
 fn push_state_to_sync(app: tauri::AppHandle) -> Result<SyncSettings, String> {
     let mut state = load_state(&app);
+    if !state.sync.enabled {
+        return Err("sync is off — turn it on in Settings to push".to_string());
+    }
     let folder = state
         .sync
         .folder
@@ -616,7 +634,9 @@ fn push_state_to_sync(app: tauri::AppHandle) -> Result<SyncSettings, String> {
 }
 
 /// Pull the state from the sync folder, replacing the local state
-/// wholesale, and return the new state. Last-write-wins, no merge:
+/// wholesale, and return the new state. Requires sync to be
+/// enabled — while off, the pull is refused (turn it on in
+/// Settings). Last-write-wins, no merge:
 /// local changes made since the last push are discarded, and the
 /// pulled state's own sync settings (including its folder and
 /// `last_push_at`) come with it — only `last_pull_at` is stamped
@@ -625,6 +645,9 @@ fn push_state_to_sync(app: tauri::AppHandle) -> Result<SyncSettings, String> {
 #[tauri::command]
 fn pull_state_from_sync(app: tauri::AppHandle) -> Result<KovaState, String> {
     let current = load_state(&app);
+    if !current.sync.enabled {
+        return Err("sync is off — turn it on in Settings to pull".to_string());
+    }
     let folder = current
         .sync
         .folder
@@ -968,6 +991,23 @@ fn backup_saves(
         backup_name: backup_name.clone(),
     };
     state.save_backups.push(backup.clone());
+    // Retention (v1.3.3): keep only the N most recent backups for
+    // this game — the oldest beyond `save_backup_keep` are
+    // deleted from disk and their records dropped. Only this
+    // game's backups are considered; the just-taken backup is
+    // the newest and always survives.
+    let game_backups: Vec<SaveBackup> = state
+        .save_backups
+        .iter()
+        .filter(|b| b.game_key == game_key)
+        .cloned()
+        .collect();
+    for name in kova_core::backups_to_prune(&game_backups, state.save_backup_keep) {
+        let _ = std::fs::remove_dir_all(game_dir.join(&name));
+        state
+            .save_backups
+            .retain(|b| !(b.game_key == game_key && b.backup_name == name));
+    }
     save_state(&app, &state)?;
     Ok(BackupResult {
         backup,
@@ -1083,6 +1123,18 @@ fn restore_save(
     })?;
     save_state(&app, &state)?;
     Ok(pre_restore.unwrap_or(record))
+}
+
+/// Set how many save backups to keep per game (v1.3.3), clamped
+/// to 1..=50, and return the updated state. No immediate prune —
+/// pruning happens when the next backup is taken (the UI copy
+/// says so).
+#[tauri::command]
+fn set_save_backup_keep(app: tauri::AppHandle, keep: usize) -> Result<KovaState, String> {
+    let mut state = load_state(&app);
+    state.save_backup_keep = keep.clamp(1, kova_core::MAX_SAVE_BACKUP_KEEP);
+    save_state(&app, &state)?;
+    Ok(state)
 }
 
 // ---------------------------------------------------------------------------
@@ -2502,6 +2554,7 @@ pub fn run() {
             set_beta,
             set_kids,
             set_sync_folder,
+            set_sync_enabled,
             push_state_to_sync,
             pull_state_from_sync,
             add_journal_entry,
@@ -2509,6 +2562,7 @@ pub fn run() {
             backup_saves,
             list_save_backups,
             restore_save,
+            set_save_backup_keep,
             get_milestones,
             get_disk_usage,
             import_state,
