@@ -48,6 +48,7 @@ pub mod avok;
 pub mod epic;
 pub mod gog;
 pub mod itch;
+pub mod live;
 pub mod milestones;
 pub mod perf;
 pub mod profiles;
@@ -63,6 +64,13 @@ pub use state::{
     JournalEntry, KidsSettings, KovaState, SaveBackup, Shelf, SyncSettings,
     DEFAULT_SAVE_BACKUP_KEEP, JOURNAL_CAP, JOURNAL_ENTRY_MAX_CHARS, MAX_SAVE_BACKUP_KEEP,
     MAX_SHELVES,
+};
+pub use live::{
+    prune_messages, sort_friends, suggest_tag_variants, tag_key, validate_live_tag, CachedFriend,
+    ConversationCache, ConversationSummary, FriendRequest, LiveMessage, LiveMessageCache, LiveState,
+    OutgoingRequest, PresenceState, FRIEND_CAP, LIVE_TAG_MAX_CHARS, LIVE_TAG_MIN_CHARS,
+    MESSAGE_HISTORY_CAP, MESSAGE_MAX_CHARS, MESSAGE_RATE_LIMIT_PER_MINUTE, PASSWORD_MIN_CHARS,
+    REPORT_NOTE_MAX_CHARS, TAG_CHANGE_COOLDOWN_SECS, TAG_HOLD_SECS,
 };
 pub use milestones::{
     compute_milestones, earned_ids, MilestoneStats, MilestoneStatus, MILESTONE_FINISHED_10,

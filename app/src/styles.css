@@ -1762,3 +1762,450 @@ button.toggle-btn.on {
     text-align: left;
   }
 }
+
+/* ------------------------------------------------ KOVA LIVE --- */
+
+/* Header: the gamertag chip gains a second line (the LIVE
+   status) and the Friends tab a count badge. The badge is the
+   cyan status mark, like the update dot — a count, not a dot,
+   because the number is the news. */
+.header-profile-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.3;
+}
+
+.header-live-status {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count-badge {
+  display: inline-block;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #03181d;
+  font-size: 11px;
+  font-weight: 800;
+  vertical-align: middle;
+  flex: none;
+}
+
+.count-badge[hidden] {
+  display: none;
+}
+
+/* Join card (Profile view). Sits between the header and the
+   stats strip, in the settings-card language. */
+.live-join-card {
+  margin-bottom: 1.2rem;
+}
+
+.live-mode-row {
+  margin-bottom: 1rem;
+}
+
+button.ghost.live-mode-active {
+  background: var(--panel-3);
+  color: #ffffff;
+  border-color: var(--panel-3);
+}
+
+.live-suggestions {
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+}
+
+button.ghost.live-suggestion {
+  padding: 0.35rem 0.8rem;
+  font-size: 0.88rem;
+}
+
+.live-form-note {
+  color: #ff6b5e;
+  min-height: 1.2em;
+  margin-bottom: 0.8rem;
+}
+
+.live-form-note:empty {
+  display: none;
+}
+
+.live-verify-row {
+  margin-bottom: 1rem;
+}
+
+.live-tag-change {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.live-privacy-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.live-privacy-row .toggle-row {
+  margin-bottom: 0.25rem;
+}
+
+/* Friends view: one column of blocks; with a conversation open,
+   a two-pane layout (list left, conversation right). */
+.live-friends-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.2rem;
+  align-items: start;
+}
+
+.live-friends-layout.has-conversation {
+  grid-template-columns: 380px 1fr;
+}
+
+.live-friends-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  min-width: 0;
+}
+
+.live-presence-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.8rem 1.1rem;
+}
+
+.live-presence-text {
+  font-weight: 600;
+}
+
+.live-presence-line .live-appear-toggle {
+  margin-bottom: 0;
+  flex: none;
+}
+
+.live-search-wrap,
+.live-requests-wrap,
+.live-messages-wrap,
+.live-friends-wrap {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.1rem 1.3rem;
+}
+
+.live-section-title {
+  margin: 0 0 0.8rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.live-search-row {
+  margin-bottom: 0.5rem;
+}
+
+.live-search-result {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  margin-top: 0.8rem;
+}
+
+/* Friend / request / conversation rows: avatar, tag, presence
+   line, actions. One left edge (the text column), one right
+   edge (the actions). */
+.live-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.7rem 0;
+  min-width: 0;
+}
+
+.live-row + .live-row {
+  border-top: 1px solid var(--border);
+}
+
+.live-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.live-row-tag {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-row-sub {
+  color: var(--muted);
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-row-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex: none;
+}
+
+.live-row-actions button {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.88rem;
+}
+
+.live-avatar-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* Presence dot on the avatar: green online, cyan in game, grey
+   offline. Colour on data only. */
+.live-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid var(--panel);
+}
+
+.live-dot.online {
+  background: #3fc07a;
+}
+
+.live-dot.in-game {
+  background: var(--accent);
+}
+
+.live-dot.offline {
+  background: #6b7280;
+}
+
+.live-friend-row.is-offline {
+  opacity: 0.55;
+}
+
+.live-convo-row {
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.live-convo-row:hover {
+  background: var(--panel-2);
+}
+
+.live-convo-row .count-badge {
+  margin-left: 0;
+}
+
+/* Conversation panel: header, history, composer. The history
+   scrolls inside its own frame; the composer stays put. */
+.live-conversation-col {
+  min-width: 0;
+}
+
+.live-conversation {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.1rem 1.3rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+
+.live-convo-head {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.9rem;
+}
+
+button.ghost.live-small {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.live-history {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow-y: auto;
+  min-height: 200px;
+  max-height: 460px;
+  padding-right: 0.3rem;
+}
+
+.live-message {
+  max-width: 78%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.live-message.is-mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.live-message.is-theirs {
+  align-self: flex-start;
+}
+
+.live-message-body {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.live-message.is-mine .live-message-body {
+  background: var(--panel-3);
+}
+
+.live-message-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 11px;
+  color: var(--faint);
+  padding: 0 0.2rem;
+}
+
+button.live-text-btn {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+button.live-text-btn:hover {
+  color: var(--text);
+  background: transparent;
+}
+
+.live-composer {
+  display: flex;
+  gap: 0.6rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  margin-top: 0.9rem;
+}
+
+/* The not-a-friend notice replaces the composer: the note takes
+   the room, the Add friend button sits at the right. */
+.live-composer.live-not-friend {
+  align-items: center;
+}
+
+.live-composer.live-not-friend span {
+  flex: 1;
+}
+
+.live-report-form {
+  border-top: 1px solid var(--border);
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+}
+
+.live-report-note {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  margin-bottom: 0.8rem;
+}
+
+/* Settings LIVE section: subheads, the blocked list (reuses
+   folder rows), and the danger zone last. */
+.live-subhead {
+  margin: 1.1rem 0 0.6rem;
+  font-size: 1rem;
+}
+
+.live-danger-zone {
+  border-top: 1px solid var(--border);
+  margin-top: 1.2rem;
+  padding-top: 0.4rem;
+}
+
+button.ghost.live-danger-btn {
+  color: #ff6b5e;
+  border-color: #5a2a26;
+  /* The solid danger rule below would otherwise paint this
+     ghost button red behind its red text (2.1:1). */
+  background: transparent;
+}
+
+button.live-danger-btn {
+  background: #c4242a;
+  color: #ffffff;
+}
+
+button.live-danger-btn:hover {
+  background: #d92c33;
+}
+
+button.live-danger-btn:disabled {
+  background: #7a1d20;
+  cursor: not-allowed;
+}
+
+.live-delete-row {
+  margin-top: 0.8rem;
+}
+
+.live-kids-note h2 {
+  margin-bottom: 0.5rem;
+}
+
+@media (max-width: 900px) {
+  .live-friends-layout.has-conversation {
+    grid-template-columns: 1fr;
+  }
+
+  .live-friends-layout.has-conversation .live-friends-list {
+    display: none;
+  }
+
+  .live-presence-line {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+}

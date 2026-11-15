@@ -156,8 +156,15 @@
 //!   launch-arg preset the game itself honors (e.g. Source
 //!   `+fps_max`), and the UI labels presets "sent to the game;
 //!   the game decides what to honor."
-//! * KOVA LIVE (§9) needs no core change: the gamertag IS the
-//!   LIVE tag. No new state, no new command — UI copy only.
+//! * KOVA LIVE Phase 1 (spec `KOVA_LIVE_PHASE1_SPEC.md`, contract
+//!   `LIVE_API_CONTRACT.md`): accounts, KOVA-native friends,
+//!   presence, and 1:1 DMs. The backend client lives in
+//!   `live.rs` (stub default; Supabase behind config, no project
+//!   yet); the 23 `live_*` commands are in this file. The LIVE
+//!   state section is serde-defaulted (`kova_core::live`), and
+//!   messages live in a separate `kova-live-messages.json`.
+
+mod live;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -165,8 +172,15 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use kova_core::{
-    BetaSettings, GamerProfile, JournalEntry, KidsSettings, KovaState, SaveBackup, Shelf,
-    SyncSettings,
+    BetaSettings, ConversationSummary, GamerProfile, JournalEntry, KidsSettings, KovaState,
+    LiveMessage, LiveState, SaveBackup, Shelf, SyncSettings,
+};
+use live::{
+    clear_message_cache, clear_session_token, derive_presence, load_message_cache,
+    load_session_token, save_message_cache, spawn_realtime_thread, store_session_token,
+    ActiveSession, ActiveSessionSnapshot, BackendKind, FriendsSnapshot, LiveBackend,
+    LiveBackendState, LiveStatus, PresencePublish, PublicProfile, RealtimeHandle, SessionInfo,
+    TagCheck,
 };
 use serde::{Deserialize, Serialize};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -238,14 +252,10 @@ fn cache_library(last: &LastLibrary, library: &kova_core::UnifiedLibrary) {
 /// game while one is running replaces the record (each game's own
 /// watcher still records its session on exit — the record is only
 /// what the timer UI shows).
-#[derive(Debug, Clone)]
-struct ActiveSessionInfo {
-    game_key: String,
-    started_at: i64,
-}
-
-#[derive(Default)]
-struct ActiveSession(Mutex<Option<ActiveSessionInfo>>);
+///
+/// The type lives in `live.rs` (`ActiveSession` /
+/// `ActiveSessionSnapshot`) so the LIVE presence publisher can
+/// read it; same shape, same semantics as the v1.2.0 original.
 
 /// Slice 5.1 migration: resolve the state's recents against the
 /// library and fold any profile stranded under a snapshot key
@@ -1986,7 +1996,7 @@ fn try_register_session(active: &ActiveSession, key: &str, started_at: i64) -> b
             return false;
         }
     }
-    *guard = Some(ActiveSessionInfo {
+    *guard = Some(ActiveSessionSnapshot {
         game_key: key.to_string(),
         started_at,
     });
@@ -2502,10 +2512,891 @@ fn restart_app(app: tauri::AppHandle) {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+// ---------------------------------------------------------------------------
+// KOVA LIVE Phase 1 — commands (spec KOVA_LIVE_PHASE1_SPEC.md,
+// contract LIVE_API_CONTRACT.md)
+//
+// The backend (stub or Supabase) is the source of truth for
+// friends, requests, blocks, and messages; `KovaState.live` is a
+// cache of the social graph, and `kova-live-messages.json` is the
+// local message cache. Commands refresh the cache after every
+// mutation, and the read commands fail soft to the cache when the
+// backend is unreachable — LIVE going down must never take the
+// launcher down with it.
+//
+// Error strings start with a code prefix (`tag_taken: ...`); the
+// frontend matches on the prefix before the first `:`.
+// ---------------------------------------------------------------------------
+
+/// The Supabase Realtime socket thread handle: one slot, started
+/// on sign-in / session restore, stopped on sign-out / account
+/// deletion. The stub backend never uses it.
+#[derive(Default)]
+struct LiveRealtime(Mutex<Option<RealtimeHandle>>);
+
+/// Lock the backend or fail with a plain-string error. Held only
+/// for one backend call at a time — never across a state save.
+fn lock_backend(
+    live: &LiveBackendState,
+) -> Result<std::sync::MutexGuard<'_, Box<dyn LiveBackend>>, String> {
+    live.backend
+        .lock()
+        .map_err(|_| "live_busy: KOVA LIVE is busy — try again".to_string())
+}
+
+/// Supabase selected but no URL/key configured: every LIVE
+/// command that needs the backend fails with `not_configured`.
+/// (`live_get_status` reports `configured: false` instead, and
+/// `live_get_friends` fails soft to the cache — see its note.)
+fn require_live_configured(live: &LiveBackendState) -> Result<(), String> {
+    if live.config.backend == BackendKind::Supabase && !live.config.supabase_configured() {
+        return Err(
+            "not_configured: KOVA LIVE isn't set up yet — no Supabase project is configured"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// LIVE sign-in is disabled on the Kids shelf (spec §1.2).
+fn require_not_kids(state: &KovaState) -> Result<(), String> {
+    if state.kids.enabled {
+        return Err("kids_disabled: KOVA LIVE is off on the Kids shelf".to_string());
+    }
+    Ok(())
+}
+
+/// Best-effort friends refresh: pull the snapshot from the
+/// backend into `state.live` and save. Failures are logged, never
+/// returned — callers already succeeded at their own operation.
+fn refresh_live_friends(app: &tauri::AppHandle, live: &LiveBackendState) {
+    let snapshot = {
+        let backend = match live.backend.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        match backend.get_friends() {
+            Ok(snapshot) => snapshot,
+            Err(e) => {
+                eprintln!("KOVA LIVE: friends refresh failed: {e}");
+                return;
+            }
+        }
+    };
+    let mut state = load_state(app);
+    state.live.friends = snapshot.friends;
+    state.live.requests_in = snapshot.requests_in;
+    state.live.requests_out = snapshot.requests_out;
+    state.live.blocked = snapshot.blocked;
+    if let Err(e) = save_state(app, &state) {
+        eprintln!("KOVA LIVE: could not save the friends refresh: {e}");
+    }
+}
+
+/// Stop the Realtime thread, if one is running. The stop only
+/// flags the thread — it does not join it (the socket read can
+/// block indefinitely; the thread exits on its next read).
+fn stop_realtime(realtime: &LiveRealtime) {
+    let handle = realtime.0.lock().ok().and_then(|mut guard| guard.take());
+    if let Some(handle) = handle {
+        handle.stop();
+    }
+}
+
+/// Start the Realtime thread for the current session (Supabase
+/// only — the stub has no socket). Any running thread is stopped
+/// first.
+fn start_realtime(app: &tauri::AppHandle, live: &LiveBackendState, realtime: &LiveRealtime) {
+    stop_realtime(realtime);
+    if live.config.backend != BackendKind::Supabase {
+        return;
+    }
+    let session = {
+        let backend = match live.backend.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        backend.session()
+    };
+    let Some(session) = session else {
+        return;
+    };
+    let handle = spawn_realtime_thread(
+        &live.config,
+        &session.user_id,
+        &session.access_token,
+        app.clone(),
+    );
+    if let Ok(mut guard) = realtime.0.lock() {
+        *guard = Some(handle);
+    }
+}
+
+/// After sign-up / sign-in / session restore: store the refresh
+/// token in the OS credential store, record the identity in
+/// `state.live`, refresh friends, start Realtime (Supabase), and
+/// publish presence now.
+fn apply_live_session(
+    app: &tauri::AppHandle,
+    live: &LiveBackendState,
+    realtime: &LiveRealtime,
+    session: &SessionInfo,
+) {
+    if let Err(e) = store_session_token(&session.refresh_token) {
+        eprintln!("KOVA LIVE: could not store the session token: {e}");
+    }
+    let mut state = load_state(app);
+    state.live.signed_in_tag = Some(session.tag.clone());
+    state.live.live_tag = Some(session.tag.clone());
+    state.live.email_verified = session.email_verified;
+    if let Err(e) = save_state(app, &state) {
+        eprintln!("KOVA LIVE: could not save the sign-in: {e}");
+    }
+    refresh_live_friends(app, live);
+    start_realtime(app, live, realtime);
+    publish_presence_now(app);
+}
+
+/// Sign-out / account deletion, local side: stop Realtime, drop
+/// the backend session, clear the token and the message cache,
+/// and reset the LIVE identity + social cache in state. The
+/// privacy toggles survive (they are preferences, not identity);
+/// `tag_changed_at` is cleared only by account deletion.
+fn clear_live_session_local(
+    app: &tauri::AppHandle,
+    live: &LiveBackendState,
+    realtime: &LiveRealtime,
+    full_reset: bool,
+) {
+    stop_realtime(realtime);
+    if let Ok(mut backend) = live.backend.lock() {
+        backend.sign_out();
+    }
+    clear_session_token();
+    clear_message_cache(app);
+    let mut state = load_state(app);
+    state.live.signed_in_tag = None;
+    state.live.live_tag = None;
+    state.live.email_verified = false;
+    state.live.friends = Vec::new();
+    state.live.requests_in = Vec::new();
+    state.live.requests_out = Vec::new();
+    state.live.blocked = Vec::new();
+    if full_reset {
+        state.live.tag_changed_at = None;
+    }
+    if let Err(e) = save_state(app, &state) {
+        eprintln!("KOVA LIVE: could not save the sign-out: {e}");
+    }
+}
+
+/// The display name of the currently watched game, for presence.
+/// Falls back to the raw game key when nothing resolves.
+fn active_game_display_name(app: &tauri::AppHandle) -> Option<String> {
+    let active = app.try_state::<ActiveSession>()?;
+    let session = active.current()?;
+    let state = load_state(app);
+    let last = app.try_state::<LastLibrary>()?;
+    Some(
+        game_display_name(&state, &last, &session.game_key)
+            .unwrap_or(session.game_key.clone()),
+    )
+}
+
+/// One presence publish to the backend. Returns whether the
+/// publish landed (a locked backend or a backend error is a
+/// silent miss — the publisher thread retries on its next tick).
+fn publish_presence(app: &tauri::AppHandle, presence: &PresencePublish) -> bool {
+    let Some(live) = app.try_state::<LiveBackendState>() else {
+        return false;
+    };
+    if require_live_configured(&live).is_err() {
+        return false;
+    }
+    let Ok(mut backend) = live.backend.lock() else {
+        return false;
+    };
+    match backend.set_presence(presence) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("KOVA LIVE: presence publish failed: {e}");
+            false
+        }
+    }
+}
+
+/// Publish the current presence immediately (sign-in, privacy
+/// toggle change). Best-effort — failures are silent.
+fn publish_presence_now(app: &tauri::AppHandle) {
+    let state = load_state(app);
+    if !state.live.signed_in() {
+        return;
+    }
+    let playing = active_game_display_name(app);
+    let presence = derive_presence(
+        state.live.appear_offline,
+        state.live.hide_playing,
+        playing.as_deref(),
+    );
+    publish_presence(app, &presence);
+}
+
+/// The presence publisher thread: every 30s it re-derives
+/// presence from the privacy toggles + the active session and
+/// publishes when it changed, plus a 5-minute heartbeat so
+/// friends see a live presence even when nothing changed. It
+/// never panics and never blocks the app; a signed-out player
+/// publishes nothing.
+fn spawn_presence_publisher(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        // First tick quickly so a restored session publishes
+        // promptly; then the steady 30s cadence.
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let mut last_published: Option<PresencePublish> = None;
+        let mut last_publish_at: i64 = 0;
+        loop {
+            let now = now_epoch_seconds();
+            let state = load_state(&app);
+            if state.live.signed_in() {
+                let playing = active_game_display_name(&app);
+                let presence = derive_presence(
+                    state.live.appear_offline,
+                    state.live.hide_playing,
+                    playing.as_deref(),
+                );
+                let changed = last_published.as_ref() != Some(&presence);
+                let heartbeat_due = now - last_publish_at >= 300;
+                if changed || heartbeat_due {
+                    if publish_presence(&app, &presence) {
+                        last_published = Some(presence);
+                        last_publish_at = now;
+                    }
+                }
+            } else {
+                last_published = None;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(30));
+        }
+    });
+}
+
+/// Session restore at startup (runs on a background thread so a
+/// slow or offline backend never delays launch): if the OS
+/// credential store holds a refresh token, restore the session.
+/// A dead token is cleared and the stale signed-in identity is
+/// dropped; the UI reads the persisted state, so a restore still
+/// in flight briefly shows the last-known signed-in state.
+fn restore_live_session(app: &tauri::AppHandle) {
+    let Some(token) = load_session_token() else {
+        return;
+    };
+    let Some(live) = app.try_state::<LiveBackendState>() else {
+        return;
+    };
+    let session = {
+        let mut backend = match live.backend.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        match backend.restore_session(&token) {
+            Ok(session) => session,
+            Err(e) => {
+                eprintln!("KOVA LIVE: stored session did not restore ({e}); signing out locally");
+                clear_session_token();
+                let mut state = load_state(app);
+                state.live.signed_in_tag = None;
+                state.live.live_tag = None;
+                state.live.email_verified = false;
+                if let Err(e) = save_state(app, &state) {
+                    eprintln!("KOVA LIVE: could not save the local sign-out: {e}");
+                }
+                return;
+            }
+        }
+    };
+    let mut state = load_state(app);
+    state.live.signed_in_tag = Some(session.tag.clone());
+    state.live.live_tag = Some(session.tag.clone());
+    state.live.email_verified = session.email_verified;
+    if let Err(e) = save_state(app, &state) {
+        eprintln!("KOVA LIVE: could not save the restored session: {e}");
+    }
+    refresh_live_friends(app, &live);
+    if let Some(realtime) = app.try_state::<LiveRealtime>() {
+        start_realtime(app, &live, &realtime);
+    }
+    publish_presence_now(app);
+}
+
+/// Merge fetched messages into the cache, deduping by message
+/// id (the cache has no dedupe of its own, so a naive merge
+/// would double every message on each fetch). Conversations are
+/// re-sorted oldest-first and pruned to the 500 cap.
+/// `fallback_tag` fills in a missing conversation tag (used by
+/// `live_get_messages`); messages that still have no tag are
+/// skipped.
+fn merge_fetched_messages(
+    cache: &mut kova_core::LiveMessageCache,
+    fetched: Vec<LiveMessage>,
+    fallback_tag: &str,
+) {
+    for mut message in fetched {
+        if message.conversation_tag.is_empty() {
+            message.conversation_tag = fallback_tag.to_string();
+        }
+        if message.conversation_tag.is_empty() {
+            continue;
+        }
+        let conv = cache
+            .conversations
+            .entry(message.conversation_tag.clone())
+            .or_default();
+        if !message.id.is_empty() && conv.messages.iter().any(|m| m.id == message.id) {
+            continue;
+        }
+        conv.messages.push(message);
+    }
+    for conv in cache.conversations.values_mut() {
+        conv.messages
+            .sort_by(|a, b| a.sent_at.cmp(&b.sent_at).then_with(|| a.id.cmp(&b.id)));
+        conv.messages = kova_core::prune_messages(std::mem::take(&mut conv.messages));
+    }
+}
+
+/// Find a conversation's cache key case-insensitively (cache
+/// keys are display-form tags; callers may pass any case).
+fn find_conversation_key(cache: &kova_core::LiveMessageCache, tag: &str) -> Option<String> {
+    let wanted = kova_core::tag_key(tag);
+    cache
+        .conversations
+        .keys()
+        .find(|key| kova_core::tag_key(key) == wanted)
+        .cloned()
+}
+
+#[derive(Serialize)]
+struct SignUpResponse {
+    live_tag: String,
+    email_verified: bool,
+}
+
+#[derive(Serialize)]
+struct ClaimTagResponse {
+    live_tag: String,
+}
+
+#[derive(Serialize)]
+struct SearchResponse {
+    found: bool,
+    profile: Option<PublicProfile>,
+}
+
+#[derive(Serialize)]
+struct RequestResponse {
+    request_id: String,
+}
+
+#[derive(Serialize)]
+struct SendMessageResponse {
+    message: LiveMessage,
+}
+
+#[derive(Serialize)]
+struct GetMessagesResponse {
+    messages: Vec<LiveMessage>,
+    unread: usize,
+}
+
+#[derive(Serialize)]
+struct PresenceResponse {
+    state: String,
+    playing: Option<String>,
+}
+
+#[tauri::command]
+fn live_get_status(app: tauri::AppHandle, live: tauri::State<'_, LiveBackendState>) -> LiveStatus {
+    let state = load_state(&app);
+    LiveStatus::from_state(&state.live, &live.config)
+}
+
+#[tauri::command]
+fn live_sign_up(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    realtime: tauri::State<'_, LiveRealtime>,
+    email: String,
+    password: String,
+    tag: String,
+) -> Result<SignUpResponse, String> {
+    let state = load_state(&app);
+    require_not_kids(&state)?;
+    require_live_configured(&live)?;
+    let session = {
+        let mut backend = lock_backend(&live)?;
+        backend.sign_up(&email, &password, &tag)?
+    };
+    apply_live_session(&app, &live, &realtime, &session);
+    Ok(SignUpResponse {
+        live_tag: session.tag,
+        email_verified: session.email_verified,
+    })
+}
+
+#[tauri::command]
+fn live_sign_in(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    realtime: tauri::State<'_, LiveRealtime>,
+    email: String,
+    password: String,
+) -> Result<LiveStatus, String> {
+    let state = load_state(&app);
+    require_not_kids(&state)?;
+    require_live_configured(&live)?;
+    let session = {
+        let mut backend = lock_backend(&live)?;
+        backend.sign_in(&email, &password)?
+    };
+    apply_live_session(&app, &live, &realtime, &session);
+    let state = load_state(&app);
+    Ok(LiveStatus::from_state(&state.live, &live.config))
+}
+
+#[tauri::command]
+fn live_sign_out(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    realtime: tauri::State<'_, LiveRealtime>,
+) -> Result<(), String> {
+    // Always succeeds: signing out must work even when the
+    // backend is down or unconfigured.
+    clear_live_session_local(&app, &live, &realtime, false);
+    Ok(())
+}
+
+#[tauri::command]
+fn live_resend_verification(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+) -> Result<(), String> {
+    require_live_configured(&live)?;
+    let verified = {
+        let mut backend = lock_backend(&live)?;
+        backend.resend_verification()?;
+        backend.session().map(|s| s.email_verified)
+    };
+    // The stub verifies immediately on resend; sync the flag.
+    if let Some(verified) = verified {
+        let mut state = load_state(&app);
+        state.live.email_verified = verified;
+        save_state(&app, &state)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn live_check_tag(
+    live: tauri::State<'_, LiveBackendState>,
+    tag: String,
+) -> Result<TagCheck, String> {
+    require_live_configured(&live)?;
+    let backend = lock_backend(&live)?;
+    backend.check_tag(&tag)
+}
+
+#[tauri::command]
+fn live_claim_tag(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    tag: String,
+) -> Result<ClaimTagResponse, String> {
+    require_live_configured(&live)?;
+    let claimed = {
+        let mut backend = lock_backend(&live)?;
+        backend.claim_tag(&tag)?
+    };
+    let mut state = load_state(&app);
+    state.live.live_tag = Some(claimed.clone());
+    state.live.signed_in_tag = Some(claimed.clone());
+    state.live.tag_changed_at = Some(now_epoch_seconds());
+    save_state(&app, &state)?;
+    Ok(ClaimTagResponse { live_tag: claimed })
+}
+
+#[tauri::command]
+fn live_search_tag(
+    live: tauri::State<'_, LiveBackendState>,
+    tag: String,
+) -> Result<SearchResponse, String> {
+    require_live_configured(&live)?;
+    let backend = lock_backend(&live)?;
+    let profile = backend.search_tag(&tag)?;
+    Ok(SearchResponse {
+        found: profile.is_some(),
+        profile,
+    })
+}
+
+#[tauri::command]
+fn live_send_request(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    tag: String,
+) -> Result<RequestResponse, String> {
+    require_live_configured(&live)?;
+    let request_id = {
+        let mut backend = lock_backend(&live)?;
+        backend.send_request(&tag)?
+    };
+    refresh_live_friends(&app, &live);
+    Ok(RequestResponse { request_id })
+}
+
+#[tauri::command]
+fn live_accept_request(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    request_id: String,
+) -> Result<(), String> {
+    require_live_configured(&live)?;
+    {
+        let mut backend = lock_backend(&live)?;
+        backend.accept_request(&request_id)?;
+    }
+    refresh_live_friends(&app, &live);
+    Ok(())
+}
+
+#[tauri::command]
+fn live_decline_request(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    request_id: String,
+) -> Result<(), String> {
+    require_live_configured(&live)?;
+    {
+        let mut backend = lock_backend(&live)?;
+        backend.decline_request(&request_id)?;
+    }
+    refresh_live_friends(&app, &live);
+    Ok(())
+}
+
+#[tauri::command]
+fn live_remove_friend(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    tag: String,
+) -> Result<(), String> {
+    require_live_configured(&live)?;
+    {
+        let mut backend = lock_backend(&live)?;
+        backend.remove_friend(&tag)?;
+    }
+    refresh_live_friends(&app, &live);
+    Ok(())
+}
+
+#[tauri::command]
+fn live_block(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    tag: String,
+) -> Result<(), String> {
+    require_live_configured(&live)?;
+    {
+        let mut backend = lock_backend(&live)?;
+        backend.block(&tag)?;
+    }
+    // A blocked player's cached conversation goes too — the
+    // Messages section must not keep showing someone blocked.
+    let mut cache = load_message_cache(&app);
+    if let Some(key) = find_conversation_key(&cache, &tag) {
+        cache.conversations.remove(&key);
+        if let Err(e) = save_message_cache(&app, &cache) {
+            eprintln!("KOVA LIVE: could not save the message cache after block: {e}");
+        }
+    }
+    refresh_live_friends(&app, &live);
+    Ok(())
+}
+
+#[tauri::command]
+fn live_unblock(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    tag: String,
+) -> Result<(), String> {
+    require_live_configured(&live)?;
+    {
+        let mut backend = lock_backend(&live)?;
+        backend.unblock(&tag)?;
+    }
+    refresh_live_friends(&app, &live);
+    Ok(())
+}
+
+#[tauri::command]
+fn live_get_friends(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+) -> Result<FriendsSnapshot, String> {
+    // Fail-soft by design (contract §3): any backend failure —
+    // offline, unconfigured, locked — returns the cached snapshot
+    // from state instead of an error. The UI learns about
+    // `configured: false` from `live_get_status`.
+    let snapshot = {
+        let backend = match live.backend.lock() {
+            Ok(guard) => guard,
+            Err(_) => return Ok(cached_friends_snapshot(&app)),
+        };
+        match backend.get_friends() {
+            Ok(snapshot) => snapshot,
+            Err(e) => {
+                eprintln!("KOVA LIVE: friends fetch failed ({e}); serving the cache");
+                return Ok(cached_friends_snapshot(&app));
+            }
+        }
+    };
+    let mut state = load_state(&app);
+    state.live.friends = snapshot.friends.clone();
+    state.live.requests_in = snapshot.requests_in.clone();
+    state.live.requests_out = snapshot.requests_out.clone();
+    state.live.blocked = snapshot.blocked.clone();
+    if let Err(e) = save_state(&app, &state) {
+        eprintln!("KOVA LIVE: could not save the friends snapshot: {e}");
+    }
+    Ok(snapshot)
+}
+
+/// The cached friends snapshot from `state.live`, for the
+/// fail-soft path of `live_get_friends`.
+fn cached_friends_snapshot(app: &tauri::AppHandle) -> FriendsSnapshot {
+    let state = load_state(app);
+    FriendsSnapshot {
+        friends: state.live.friends,
+        requests_in: state.live.requests_in,
+        requests_out: state.live.requests_out,
+        blocked: state.live.blocked,
+    }
+}
+
+#[tauri::command]
+fn live_set_privacy(
+    app: tauri::AppHandle,
+    appear_offline: Option<bool>,
+    hide_playing: Option<bool>,
+) -> Result<LiveState, String> {
+    let mut state = load_state(&app);
+    if let Some(value) = appear_offline {
+        state.live.appear_offline = value;
+    }
+    if let Some(value) = hide_playing {
+        state.live.hide_playing = value;
+    }
+    save_state(&app, &state)?;
+    // Publish immediately so the toggle feels instant; the
+    // publisher thread would pick it up within 30s otherwise.
+    publish_presence_now(&app);
+    Ok(state.live)
+}
+
+#[tauri::command]
+fn live_send_message(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    to_tag: String,
+    body: String,
+) -> Result<SendMessageResponse, String> {
+    require_live_configured(&live)?;
+    let mut message = {
+        let mut backend = lock_backend(&live)?;
+        backend.send_message(&to_tag, &body)?
+    };
+    if message.conversation_tag.is_empty() {
+        message.conversation_tag = to_tag.clone();
+    }
+    let mut cache = load_message_cache(&app);
+    cache.add_message(message.clone());
+    if let Err(e) = save_message_cache(&app, &cache) {
+        eprintln!("KOVA LIVE: could not save the sent message to the cache: {e}");
+    }
+    Ok(SendMessageResponse { message })
+}
+
+#[tauri::command]
+fn live_get_conversations(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+) -> Result<Vec<ConversationSummary>, String> {
+    // Sync from the backend first, fail-soft to the cache.
+    let fetched = {
+        let backend = live.backend.lock().ok();
+        backend.and_then(|b| b.fetch_all_messages().ok())
+    };
+    let mut cache = load_message_cache(&app);
+    if let Some(fetched) = fetched {
+        merge_fetched_messages(&mut cache, fetched, "");
+        if let Err(e) = save_message_cache(&app, &cache) {
+            eprintln!("KOVA LIVE: could not save the synced conversations: {e}");
+        }
+    }
+    Ok(cache.summaries())
+}
+
+#[tauri::command]
+fn live_get_messages(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    tag: String,
+) -> Result<GetMessagesResponse, String> {
+    // Sync this conversation from the backend first, fail-soft.
+    let fetched = {
+        let backend = live.backend.lock().ok();
+        backend.and_then(|b| b.fetch_messages(&tag).ok())
+    };
+    let mut cache = load_message_cache(&app);
+    if let Some(fetched) = fetched {
+        merge_fetched_messages(&mut cache, fetched, &tag);
+    }
+    // Unread is counted BEFORE marking read, so the UI can show
+    // how many were new.
+    let key = find_conversation_key(&cache, &tag);
+    let unread = key
+        .as_ref()
+        .and_then(|k| cache.conversations.get(k))
+        .map(|conv| conv.unread_count())
+        .unwrap_or(0);
+    let messages = key
+        .as_ref()
+        .and_then(|k| cache.conversations.get(k))
+        .map(|conv| conv.messages.clone())
+        .unwrap_or_default();
+    if let Some(key) = key {
+        cache.mark_read(&key, now_epoch_seconds());
+    }
+    if let Err(e) = save_message_cache(&app, &cache) {
+        eprintln!("KOVA LIVE: could not save the message cache: {e}");
+    }
+    Ok(GetMessagesResponse { messages, unread })
+}
+
+#[tauri::command]
+fn live_delete_message(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    message_id: String,
+) -> Result<(), String> {
+    require_live_configured(&live)?;
+    {
+        let mut backend = lock_backend(&live)?;
+        backend.delete_message(&message_id)?;
+    }
+    let mut cache = load_message_cache(&app);
+    let mut changed = false;
+    for conv in cache.conversations.values_mut() {
+        let before = conv.messages.len();
+        conv.messages.retain(|m| m.id != message_id);
+        if conv.messages.len() != before {
+            changed = true;
+        }
+    }
+    if changed {
+        if let Err(e) = save_message_cache(&app, &cache) {
+            eprintln!("KOVA LIVE: could not save the message cache after delete: {e}");
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn live_report(
+    live: tauri::State<'_, LiveBackendState>,
+    kind: String,
+    ref_: String,
+    note: String,
+) -> Result<(), String> {
+    require_live_configured(&live)?;
+    let mut backend = lock_backend(&live)?;
+    backend.report(&kind, &ref_, &note)
+}
+
+#[tauri::command]
+fn live_delete_account(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+    realtime: tauri::State<'_, LiveRealtime>,
+    confirm_tag: String,
+) -> Result<(), String> {
+    require_live_configured(&live)?;
+    let state = load_state(&app);
+    let live_tag = state
+        .live
+        .live_tag
+        .clone()
+        .ok_or_else(|| "not_signed_in: sign in to KOVA LIVE first".to_string())?;
+    // Trimmed, case-insensitive: the player types their own tag,
+    // and case alone must not block an irreversible action they
+    // clearly mean.
+    if kova_core::tag_key(confirm_tag.trim()) != kova_core::tag_key(&live_tag) {
+        return Err("confirm_mismatch: type your LIVE tag to confirm".to_string());
+    }
+    {
+        let mut backend = lock_backend(&live)?;
+        backend.delete_account()?;
+    }
+    clear_live_session_local(&app, &live, &realtime, true);
+    Ok(())
+}
+
+#[tauri::command]
+fn live_get_presence(app: tauri::AppHandle) -> PresenceResponse {
+    let state = load_state(&app);
+    // Local display only: the player themself sees
+    // "appear_offline" when the toggle is on; friends see plain
+    // "offline" (the publisher uses `derive_presence` for that).
+    if state.live.appear_offline {
+        return PresenceResponse {
+            state: "appear_offline".to_string(),
+            playing: None,
+        };
+    }
+    let playing = active_game_display_name(&app);
+    let presence = derive_presence(false, state.live.hide_playing, playing.as_deref());
+    PresenceResponse {
+        state: presence.state,
+        playing: presence.playing,
+    }
+}
+
+#[tauri::command]
+fn live_sync_profile(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, LiveBackendState>,
+) -> Result<(), String> {
+    // Fail-soft by design (contract §3): a failed profile push
+    // never errors the caller — the local profile is unaffected.
+    let state = load_state(&app);
+    if !state.live.signed_in() {
+        return Ok(());
+    }
+    if require_live_configured(&live).is_err() {
+        return Ok(());
+    }
+    let Ok(mut backend) = live.backend.lock() else {
+        return Ok(());
+    };
+    if let Err(e) = backend.sync_profile(&state.gamer_profile) {
+        eprintln!("KOVA LIVE: profile sync failed: {e}");
+    }
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(LastLibrary::default())
         .manage(ActiveSession::default())
+        .manage(LiveRealtime::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
@@ -2526,6 +3417,15 @@ pub fn run() {
             }
             // The tray icon is best-effort too (see setup_tray).
             setup_tray(app.handle());
+            // KOVA LIVE: the backend is built here (not in the
+            // builder chain) because the config file lives under
+            // the app data dir, which only exists once the app
+            // does. Session restore runs on a background thread
+            // so a slow or offline backend never delays launch.
+            app.manage(LiveBackendState::new(app.path().app_data_dir().ok()));
+            let restore_handle = app.handle().clone();
+            std::thread::spawn(move || restore_live_session(&restore_handle));
+            spawn_presence_publisher(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -2567,7 +3467,32 @@ pub fn run() {
             get_disk_usage,
             import_state,
             notify_update_available,
-            get_store_catalog
+            get_store_catalog,
+            // KOVA LIVE Phase 1
+            live_get_status,
+            live_sign_up,
+            live_sign_in,
+            live_sign_out,
+            live_resend_verification,
+            live_check_tag,
+            live_claim_tag,
+            live_search_tag,
+            live_send_request,
+            live_accept_request,
+            live_decline_request,
+            live_remove_friend,
+            live_block,
+            live_unblock,
+            live_get_friends,
+            live_set_privacy,
+            live_send_message,
+            live_get_conversations,
+            live_get_messages,
+            live_delete_message,
+            live_report,
+            live_delete_account,
+            live_get_presence,
+            live_sync_profile
         ])
         .run(tauri::generate_context!())
         .expect("error while running KOVA");

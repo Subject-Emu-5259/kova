@@ -79,6 +79,7 @@ const views = {
   home: document.getElementById("view-home"),
   library: document.getElementById("view-library"),
   store: document.getElementById("view-store"),
+  friends: document.getElementById("view-friends"),
   profile: document.getElementById("view-profile"),
   detail: document.getElementById("view-detail"),
   settings: document.getElementById("view-settings"),
@@ -164,6 +165,21 @@ let appState = {
   save_backups: [],
   save_backup_keep: 5,
   milestones: [],
+  // KOVA LIVE (contract §1): the cached LIVE section. The Rust
+  // backend keeps it in sync; an old state file loads with the
+  // signed-out defaults (see normalizeState).
+  live: {
+    signed_in_tag: null,
+    live_tag: null,
+    email_verified: false,
+    appear_offline: false,
+    hide_playing: false,
+    tag_changed_at: null,
+    friends: [],
+    requests_in: [],
+    requests_out: [],
+    blocked: [],
+  },
 };
 let activeFilter = "all";
 let searchQuery = "";
@@ -283,6 +299,23 @@ function normalizeState(state) {
   normalized.sync = Object.assign(
     { enabled: true, folder: null, last_push_at: null, last_pull_at: null },
     (state && state.sync) || {}
+  );
+  // KOVA LIVE (contract §1): an old state file has no `live`
+  // key at all — it loads signed out, with empty caches.
+  normalized.live = Object.assign(
+    {
+      signed_in_tag: null,
+      live_tag: null,
+      email_verified: false,
+      appear_offline: false,
+      hide_playing: false,
+      tag_changed_at: null,
+      friends: [],
+      requests_in: [],
+      requests_out: [],
+      blocked: [],
+    },
+    (state && state.live) || {}
   );
   // v1.3.3 — how many save snapshots to keep per game. A state
   // file without the field, or with a 0 / non-numeric value,
@@ -600,6 +633,9 @@ function showView(name) {
   // the navigator re-anchor (it keeps focus when the focused
   // element survived, and never steals it from the mouse user).
   if (window.KovaNav) window.KovaNav.refresh();
+  // KOVA LIVE: the Friends view refreshes from the backend on
+  // entry and polls while open; other views stop the polling.
+  if (window.KovaV12 && window.KovaV12.onViewShown) window.KovaV12.onViewShown(name);
 }
 
 // -------------------------------------------------------------- launch
@@ -1507,6 +1543,11 @@ async function saveGamerProfile() {
     renderHeaderProfile();
     renderProfile();
     renderProfileSettings();
+    // Push the saved avatar/bio to the LIVE server profile
+    // (spec §2.3); a failed push never blocks the local save.
+    if (window.KovaLive) {
+      window.KovaLive.call("live_sync_profile", {}).catch(function () {});
+    }
     if (profileSaveNoteEl) {
       profileSaveNoteEl.hidden = false;
       window.setTimeout(() => {
@@ -1638,15 +1679,26 @@ function renderProfile() {
   const identity = el("div", "profile-identity");
   identity.appendChild(el("h1", "profile-name", tag || "Your profile"));
   // v1.2.0 §9: the gamertag IS the KOVA LIVE tag — the identity
-  // seed, with the honest line that nothing is online yet.
+  // seed. KOVA LIVE Phase 1 makes the label true: the status
+  // line under it comes from the live status cache (v12.js),
+  // and the Join card below the header holds the sign-up and
+  // sign-in forms while signed out.
   identity.appendChild(el("p", "profile-live-tag", "Your KOVA LIVE tag"));
-  identity.appendChild(
-    el(
-      "p",
-      "profile-live-note",
-      "LIVE is coming — your tag is already yours. Nothing is online yet."
-    )
-  );
+  const liveStatus =
+    window.KovaV12 && window.KovaV12.liveStatus ? window.KovaV12.liveStatus() : null;
+  let liveNoteText = "Join KOVA LIVE to play together — friends, presence, and messages, free.";
+  if (liveStatus && liveStatus.signed_in) {
+    liveNoteText = "Signed in as " + liveStatus.live_tag;
+    if (tag && liveStatus.live_tag && tag !== liveStatus.live_tag) {
+      liveNoteText = "Local tag: " + tag + " · LIVE tag: " + liveStatus.live_tag;
+    }
+    if (!liveStatus.email_verified) {
+      liveNoteText += " · email not verified yet";
+    }
+  } else if (kidsEnabled()) {
+    liveNoteText = "KOVA LIVE is off while the Kids shelf is on.";
+  }
+  identity.appendChild(el("p", "profile-live-note", liveNoteText));
   identity.appendChild(
     el(
       "p",
@@ -2078,9 +2130,14 @@ let pendingUpdateVersion = null;
 // feed's notes still drive the available-update display. Bump
 // APP_VERSION with each release and add its notes at the top of
 // RELEASE_ORDER.
-const APP_VERSION = "1.4.0";
-const RELEASE_ORDER = ["1.4.0", "1.3.3", "1.3.2", "1.3.1", "1.3.0", "1.2.1", "1.2.0"];
+const APP_VERSION = "1.5.0";
+const RELEASE_ORDER = ["1.5.0", "1.4.0", "1.3.3", "1.3.2", "1.3.1", "1.3.0", "1.2.1", "1.2.0"];
 const RELEASE_NOTES = {
+  "1.5.0": [
+    "KOVA LIVE is here — sign up, claim your tag, add friends by gamertag, and message them inside KOVA.",
+    "Presence shows when friends are online or in a game, with toggles to appear offline or hide what you're playing.",
+    "Account deletion is built in — your tag stays held for 30 days after you delete, so nobody can grab it.",
+  ],
   "1.4.0": [
     "Meet Stage — the third UI: a gaming-OS home with one hero game, dashboard rows, and an art-first library.",
     "Stage starts in beta and graduates to the main UI selector after its 30-day run.",
@@ -2475,7 +2532,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // that view on load. #detail has no game to show, so it falls
   // back to Home.
   const hashView = (window.location.hash || "").replace(/^#/, "");
-  if (hashView === "library" || hashView === "profile" || hashView === "settings" || hashView === "store") {
+  if (hashView === "library" || hashView === "profile" || hashView === "settings" || hashView === "store" || hashView === "friends") {
     showView(hashView);
   }
   if (updateCheckBtn) updateCheckBtn.addEventListener("click", () => checkForUpdates(true));

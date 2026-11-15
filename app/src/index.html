@@ -51,6 +51,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="logo-asset.js" defer></script>
     <script src="nav.js" defer></script>
+    <script src="live-client.js" defer></script>
     <script src="main.js" defer></script>
     <script src="v12.js" defer></script>
   </head>
@@ -65,12 +66,16 @@
         <button class="tab active" type="button" data-view="home">Home</button>
         <button class="tab" type="button" data-view="library">Library</button>
         <button class="tab" type="button" data-view="store">Store</button>
+        <button class="tab" type="button" data-view="friends">Friends<span id="friends-badge" class="count-badge" hidden></span></button>
         <button class="tab" type="button" data-view="profile">Profile</button>
         <button class="tab" type="button" data-view="settings">Settings<span id="update-badge" class="update-badge" hidden></span></button>
       </nav>
       <button id="header-profile" class="header-profile" type="button" aria-label="Open your gamer profile">
         <span id="header-avatar" class="header-avatar" aria-hidden="true"></span>
-        <span id="header-gamertag" class="header-gamertag">Set gamertag</span>
+        <span class="header-profile-text">
+          <span id="header-gamertag" class="header-gamertag">Set gamertag</span>
+          <span id="header-live-status" class="header-live-status" hidden></span>
+        </span>
       </button>
     </header>
 
@@ -169,6 +174,7 @@
       <!-- ===================== PROFILE ===================== -->
       <section id="view-profile" class="view" hidden>
         <div id="profile-header" class="profile-header"></div>
+        <div id="live-join"></div>
         <div id="profile-stats" class="stats-strip" role="list" aria-label="Your KOVA stats"></div>
         <p class="profile-note profile-playtime-note">Playtime counts only games launched from KOVA.</p>
 
@@ -207,6 +213,12 @@
           <span class="section-sub">Your card, to post anywhere — nothing leaves this machine until you share it</span>
         </div>
         <div id="profile-share" class="share-wrap"></div>
+      </section>
+
+      <!-- ===================== FRIENDS ===================== -->
+      <section id="view-friends" class="view" hidden>
+        <h1 class="view-title">Friends</h1>
+        <div id="live-friends"></div>
       </section>
 
       <!-- ===================== GAME DETAIL ===================== -->
@@ -364,6 +376,16 @@
             launched in KOVA.
           </p>
           <div id="kids-settings"></div>
+        </div>
+
+        <div class="settings-card">
+          <h2>KOVA LIVE</h2>
+          <p class="settings-note">
+            Presence, blocked players, and your LIVE account. Your
+            friends and messages live in KOVA LIVE — your library,
+            playtime, and journal never leave this machine.
+          </p>
+          <div id="live-settings"></div>
         </div>
 
         <div class="settings-card">

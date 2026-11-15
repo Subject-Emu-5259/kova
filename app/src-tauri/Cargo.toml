@@ -1,6 +1,6 @@
 [package]
 name = "kova-app"
-version = "1.4.0"
+version = "1.5.0"
 edition = "2021"
 description = "KOVA V1 launcher app (Tauri) by Avok Interactive."
 license = "MIT"
@@ -21,3 +21,10 @@ kova-core = { path = "../../crates/kova-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-updater = "2"
+# KOVA LIVE Phase 1: HTTP + websocket + OS credential store. All
+# rustls (pure Rust TLS) — no system TLS, so the Windows cross-check
+# needs no native libraries. reqwest blocking: the LIVE commands are
+# sync Tauri commands, no tokio dependency in this crate.
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
+tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+keyring = "4"

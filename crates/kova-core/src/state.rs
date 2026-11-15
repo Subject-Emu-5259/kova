@@ -588,6 +588,13 @@ pub struct KovaState {
     /// re-fires: once earned, the id stays here.
     #[serde(default)]
     pub milestones: Vec<String>,
+    /// KOVA LIVE state (Phase 1). The signed-in tag, privacy
+    /// toggles, and the cached friends list. Absent from state
+    /// files written before LIVE — the default is signed out with
+    /// an empty cache, and the app behaves exactly as before. The
+    /// session token is NEVER stored here (OS credential store).
+    #[serde(default)]
+    pub live: crate::live::LiveState,
 }
 
 impl Default for KovaState {
@@ -607,6 +614,7 @@ impl Default for KovaState {
             save_backups: Vec::new(),
             save_backup_keep: default_save_backup_keep(),
             milestones: Vec::new(),
+            live: crate::live::LiveState::default(),
         }
     }
 }

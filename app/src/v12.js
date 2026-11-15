@@ -67,6 +67,15 @@
   var profileSessionsEl = document.getElementById("profile-sessions");
   var profileLibraryStatsEl = document.getElementById("profile-library-stats");
   var profileMilestonesEl = document.getElementById("profile-milestones");
+  // KOVA LIVE surfaces (v12.js owns the classic LIVE UI: the
+  // Profile join card, the Friends view + conversation, and the
+  // Settings LIVE section — main.js owns only the view switch
+  // hook and the state shape).
+  var liveFriendsEl = document.getElementById("live-friends");
+  var liveJoinEl = document.getElementById("live-join");
+  var liveSettingsEl = document.getElementById("live-settings");
+  var friendsBadgeEl = document.getElementById("friends-badge");
+  var headerLiveStatusEl = document.getElementById("header-live-status");
   var onboardingEl = document.getElementById("onboarding");
   var onboardingBodyEl = document.getElementById("onboarding-body");
   var onboardingNextBtn = document.getElementById("onboarding-next");
@@ -1662,6 +1671,7 @@
     renderRecentSessions();
     renderLibraryStats();
     renderMilestones(false);
+    renderLiveJoin();
   }
 
   // --------------------------------------------- §10/§11 settings extras
@@ -1692,6 +1702,10 @@
               : "Kids shelf is off.",
             false
           );
+          // KOVA LIVE hides entirely on the Kids shelf; refresh
+          // the status so the badge, the header line, and the
+          // LIVE surfaces follow the switch at once.
+          refreshLiveStatus();
         })
         .catch(function (err) {
           setStatus("Could not save Kids settings: " + err, true);
@@ -2199,6 +2213,7 @@
     renderSyncSettings();
     renderSaveBackupSettings();
     renderBetaSettings();
+    renderLiveSettings();
   }
 
   // -------------------------------------------------- §7 state backup
@@ -2406,6 +2421,7 @@
             renderHeaderProfile();
             renderProfile();
             renderProfileSettings();
+            liveCall("live_sync_profile").catch(function () {});
           })
           .catch(function (err) {
             setStatus("Could not save your profile: " + err, true);
@@ -2482,11 +2498,1716 @@
     wireStaticControls();
     renderKidsBanner();
     renderSettingsExtras();
+    liveBoot();
     if (invoke) {
       pollSession();
       window.setInterval(pollSession, SESSION_POLL_MS);
     }
   });
+
+  // ================================================= KOVA LIVE ====
+  //
+  // The classic shell's LIVE UI (contract §8): the Profile join
+  // card, the Friends view + conversation panel, the Settings
+  // LIVE section, and the header status line + pending badge.
+  // All LIVE calls go through window.KovaLive (live-client.js),
+  // which routes to Tauri in the app and to the shared demo
+  // backend in demo mode / headless tests. Every call fails
+  // soft: a backend failure shows the signed-out state (or the
+  // cached friends from state.live), never a crash.
+  //
+  // Copy rule: user-facing copy says "the Avok team", never
+  // personal names. Friends are KOVA-native only, by gamertag.
+
+  var LIVE_PRESENCE_POLL_MS = 15000;
+  var LIVE_FRIENDS_POLL_MS = 30000;
+
+  var liveStatusCache = null; // last live_get_status, or null
+  var liveNotConfigured = false; // backend selected but no URL/key
+  var liveFriendsCache = null; // last live_get_friends
+  var liveConversationsCache = []; // last live_get_conversations
+  var livePresenceCache = null; // last live_get_presence
+  var liveOpenConversation = null; // tag, or null
+  var liveSearchQuery = "";
+  var liveSearchResult = null; // last live_search_tag profile, or null
+  var liveSearchState = ""; // "", "found", "not-found"
+  var livePresenceTimer = null;
+  var liveFriendsTimer = null;
+  var liveEventsWired = false;
+  var liveGateOpened = false; // demo-only live-with hook, once
+  var liveJoinMode = "signup"; // "signup" | "signin"
+  var liveJoinComplete = false; // sign-up completion screen
+  var liveDeleteArmed = false; // delete-account confirm step
+  var liveComposerDrafts = {}; // tag -> unsent composer text (survives re-renders)
+
+  function liveStatus() {
+    return liveStatusCache;
+  }
+
+  function liveSignedIn() {
+    return Boolean(liveStatusCache && liveStatusCache.signed_in);
+  }
+
+  // The error prefix before the first ":" (contract §3).
+  function liveErrCode(err) {
+    var text = err && err.message ? err.message : String(err || "");
+    var at = text.indexOf(":");
+    return at >= 0 ? text.slice(0, at) : text;
+  }
+
+  function liveErrMessage(err) {
+    var code = liveErrCode(err);
+    var messages = {
+      email_invalid: "That does not look like an email address.",
+      password_too_short: "Passwords need at least 8 characters.",
+      tag_invalid: "That tag does not fit the tag rules (3–32 characters: letters, numbers, spaces, _ and -).",
+      tag_taken: "That tag is already claimed.",
+      tag_change_too_soon: "Tags can only change once every 30 days.",
+      invalid_credentials: "That email and password do not match an account.",
+      not_signed_in: "Sign in to KOVA LIVE first.",
+      not_configured: "KOVA LIVE is not set up yet.",
+      kids_disabled: "KOVA LIVE is off while the Kids shelf is on.",
+      cannot_add_self: "You cannot add yourself as a friend.",
+      already_friends: "You are already friends.",
+      already_pending: "A friend request is already waiting.",
+      blocked: "That player is blocked.",
+      friend_cap: "The friends list is full (500).",
+      not_friends: "You can only message friends.",
+      message_too_long: "Messages can be at most 2000 characters.",
+      rate_limited: "Slow down — too many messages at once.",
+      not_your_message: "You can only delete your own messages.",
+      confirm_mismatch: "Type your LIVE tag exactly to confirm.",
+    };
+    if (messages[code]) return messages[code];
+    var text = err && err.message ? err.message : String(err || "");
+    var at = text.indexOf(":");
+    return at >= 0 ? text.slice(at + 1).trim() : text || "KOVA LIVE could not do that.";
+  }
+
+  function liveCall(cmd, args) {
+    if (!window.KovaLive) return Promise.reject(new Error("live_unavailable: KOVA LIVE is not loaded"));
+    return window.KovaLive.call(cmd, args || {});
+  }
+
+  // A friend's avatar: the shell's avatarElement handles data
+  // URLs and the built-in mark/orbit/bolt; anything else
+  // (including the stub's builtin:1–4) shows the friend's tag
+  // initial — never the local player's initial.
+  function friendAvatarElement(value, tag, sizeClass) {
+    if (value && value.indexOf("data:image/") === 0) {
+      return avatarElement(value, sizeClass);
+    }
+    if (
+      value === "builtin:mark" ||
+      value === "builtin:orbit" ||
+      value === "builtin:bolt"
+    ) {
+      return avatarElement(value, sizeClass);
+    }
+    var wrap = el("span", "avatar " + (sizeClass || "avatar-md"));
+    var initial = (tag || "?").trim().charAt(0).toUpperCase() || "?";
+    wrap.appendChild(el("span", "avatar-initial", initial));
+    return wrap;
+  }
+
+  function presenceDotClass(presence) {
+    if (presence === "online") return "live-dot online";
+    if (presence === "in_game") return "live-dot in-game";
+    return "live-dot offline";
+  }
+
+  // ------------------------------------------------------- status
+
+  // Refreshes the cached status, then the header, the badge, and
+  // any LIVE surface on screen. A failed status call means LIVE
+  // is unreachable: fail soft to the signed-out state.
+  function refreshLiveStatus() {
+    if (kidsEnabled()) {
+      liveStatusCache = null;
+      refreshLiveHeader();
+      renderLiveJoin();
+      renderLiveSettings();
+      if (currentView === "friends") renderFriends();
+      return Promise.resolve(null);
+    }
+    return liveCall("live_get_status")
+      .then(function (status) {
+        liveNotConfigured = false;
+        liveStatusCache = status;
+        refreshLiveHeader();
+        renderLiveJoin();
+        renderLiveSettings();
+        if (currentView === "friends") renderFriends();
+        // The profile header's LIVE note reads the cache.
+        if (currentView === "profile") renderProfile();
+        return status;
+      })
+      .catch(function (err) {
+        liveNotConfigured = liveErrCode(err) === "not_configured";
+        liveStatusCache = null;
+        refreshLiveHeader();
+        renderLiveJoin();
+        renderLiveSettings();
+        if (currentView === "friends") renderFriends();
+        return null;
+      });
+  }
+
+  function refreshLiveHeader() {
+    if (friendsBadgeEl) {
+      var pending =
+        liveStatusCache && liveStatusCache.signed_in
+          ? liveStatusCache.pending_requests || 0
+          : 0;
+      friendsBadgeEl.textContent = String(pending);
+      friendsBadgeEl.hidden = pending <= 0;
+      friendsBadgeEl.setAttribute("aria-label", pending + " pending friend requests");
+    }
+    if (headerLiveStatusEl) {
+      if (!liveStatusCache || !liveStatusCache.signed_in) {
+        headerLiveStatusEl.hidden = true;
+        headerLiveStatusEl.textContent = "";
+        return;
+      }
+      var line = liveStatusCache.appear_offline
+        ? "LIVE · Appear offline"
+        : "LIVE · Online";
+      if (!liveStatusCache.email_verified) line = "LIVE · Email not verified";
+      var pendingCount = liveStatusCache.pending_requests || 0;
+      if (pendingCount > 0) {
+        line += " · " + pendingCount + " request" + (pendingCount === 1 ? "" : "s");
+      }
+      headerLiveStatusEl.textContent = line;
+      headerLiveStatusEl.hidden = false;
+    }
+  }
+
+  // After any mutation (accept, block, sign-out…), refresh the
+  // status + friends + conversations and re-render the surfaces.
+  function refreshLiveAll() {
+    return refreshLiveStatus().then(function () {
+      if (!liveSignedIn()) {
+        liveFriendsCache = null;
+        liveConversationsCache = [];
+        return null;
+      }
+      return refreshLiveFriends();
+    });
+  }
+
+  function refreshLiveFriends() {
+    return liveCall("live_get_friends")
+      .then(function (data) {
+        liveFriendsCache = data;
+        return liveCall("live_get_conversations");
+      })
+      .then(function (convos) {
+        liveConversationsCache = convos || [];
+        // Re-render whichever LIVE surface is on screen: the
+        // Friends view, or the Settings LIVE section (blocked
+        // list) after a block/unblock.
+        if (currentView === "friends") renderFriends();
+        else if (currentView === "settings") renderLiveSettings();
+        return liveFriendsCache;
+      })
+      .catch(function () {
+        // Fail soft: keep the last good cache (or the cached
+        // state.live friends) and show the list we have.
+        if (!liveFriendsCache && state().live) {
+          var cached = state().live;
+          liveFriendsCache = {
+            friends: cached.friends || [],
+            requests_in: cached.requests_in || [],
+            requests_out: cached.requests_out || [],
+            blocked: cached.blocked || [],
+          };
+        }
+        if (currentView === "friends") renderFriends();
+        else if (currentView === "settings") renderLiveSettings();
+        return liveFriendsCache;
+      });
+  }
+
+  function refreshLivePresence() {
+    return liveCall("live_get_presence")
+      .then(function (presence) {
+        livePresenceCache = presence;
+        if (currentView === "friends") renderFriendsPresenceLine();
+        return presence;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+
+  // ------------------------------------------------------ polling
+
+  function startLivePolling() {
+    stopLivePolling();
+    if (!liveSignedIn()) return;
+    livePresenceTimer = window.setInterval(refreshLivePresence, LIVE_PRESENCE_POLL_MS);
+    liveFriendsTimer = window.setInterval(refreshLiveFriends, LIVE_FRIENDS_POLL_MS);
+  }
+
+  function stopLivePolling() {
+    if (livePresenceTimer) {
+      window.clearInterval(livePresenceTimer);
+      livePresenceTimer = null;
+    }
+    if (liveFriendsTimer) {
+      window.clearInterval(liveFriendsTimer);
+      liveFriendsTimer = null;
+    }
+  }
+
+  function liveOnViewShown(name) {
+    if (name === "friends") {
+      if (!liveSignedIn()) {
+        // Cold cache (fresh load, direct link): the status fetch
+        // must chain the friends fetch, or the lists never load
+        // until the 30s poll.
+        refreshLiveStatus().then(function () {
+          if (liveSignedIn()) {
+            refreshLiveFriends();
+            refreshLivePresence();
+          }
+        });
+      } else {
+        refreshLiveFriends();
+        refreshLivePresence();
+      }
+      startLivePolling();
+    } else {
+      stopLivePolling();
+      // The Settings LIVE section reads the friends cache for
+      // the blocked list — refresh it on entry so a block from
+      // the Friends view shows up (the section is not
+      // re-rendered by showView itself).
+      if (name === "settings") {
+        if (liveSignedIn()) refreshLiveFriends();
+        else
+          refreshLiveStatus().then(function () {
+            if (liveSignedIn()) refreshLiveFriends();
+          });
+      }
+    }
+  }
+
+  function liveBoot() {
+    refreshLiveStatus();
+    if (window.KovaLive && !liveEventsWired) {
+      liveEventsWired = true;
+      // Under Tauri, presence + message events refresh the lists
+      // live; in demo mode these are no-ops (polling covers it).
+      window.KovaLive.onEvent("live-presence", function () {
+        if (currentView === "friends") refreshLiveFriends();
+      });
+      window.KovaLive.onEvent("live-message", function (event) {
+        var tag =
+          event && event.payload && event.payload.from_tag
+            ? event.payload.from_tag
+            : null;
+        if (currentView === "friends") {
+          refreshLiveFriends();
+          if (tag && liveOpenConversation === tag) renderConversation(tag);
+        }
+      });
+    }
+  }
+
+  // ------------------------------------------------- join / sign-in
+
+  // The Profile join card: sign-up + sign-in while signed out
+  // (tag claim with availability + suggestions, verification
+  // state + resend, privacy toggles on sign-up completion);
+  // status + sign-out while signed in. Hidden entirely on the
+  // Kids shelf.
+  function renderLiveJoin() {
+    if (!liveJoinEl) return;
+    liveJoinEl.innerHTML = "";
+    if (kidsEnabled()) return;
+
+    var card = el("div", "settings-card live-join-card");
+    card.appendChild(el("h2", null, "KOVA LIVE"));
+
+    if (liveNotConfigured) {
+      card.appendChild(
+        el(
+          "p",
+          "settings-note",
+          "KOVA LIVE is not set up yet on this machine — the online service has no address configured. Your local profile works exactly as before."
+        )
+      );
+      liveJoinEl.appendChild(card);
+      return;
+    }
+
+    // Sign-up completion comes first: after sign-up the user IS
+    // signed in, so the signed-in branch below would swallow it.
+    if (liveJoinComplete && liveSignedIn()) {
+      renderLiveJoinComplete(card);
+      liveJoinEl.appendChild(card);
+      return;
+    }
+
+    if (liveSignedIn()) {
+      renderLiveJoinSignedIn(card);
+      liveJoinEl.appendChild(card);
+      return;
+    }
+
+    card.appendChild(
+      el(
+        "p",
+        "settings-note",
+        "Friends, presence, and messages — free, and inside KOVA only. " +
+          "Your library, playtime, and journal stay on this machine; only your tag, avatar, and bio travel."
+      )
+    );
+
+    var modeRow = el("div", "settings-row live-mode-row");
+    var signupBtn = el("button", "ghost", "Create account");
+    signupBtn.type = "button";
+    var signinBtn = el("button", "ghost", "Sign in");
+    signinBtn.type = "button";
+    if (liveJoinMode === "signup") signupBtn.classList.add("live-mode-active");
+    else signinBtn.classList.add("live-mode-active");
+    signupBtn.addEventListener("click", function () {
+      liveJoinMode = "signup";
+      liveJoinComplete = false;
+      renderLiveJoin();
+    });
+    signinBtn.addEventListener("click", function () {
+      liveJoinMode = "signin";
+      liveJoinComplete = false;
+      renderLiveJoin();
+    });
+    modeRow.appendChild(signupBtn);
+    modeRow.appendChild(signinBtn);
+    card.appendChild(modeRow);
+
+    if (liveJoinComplete) {
+      renderLiveJoinComplete(card);
+    } else if (liveJoinMode === "signup") {
+      renderLiveSignupForm(card);
+    } else {
+      renderLiveSigninForm(card);
+    }
+    liveJoinEl.appendChild(card);
+  }
+
+  function renderLiveJoinSignedIn(card) {
+    var status = liveStatusCache;
+    var localTag = (gamerProfile().gamertag || "").trim();
+    var line = "Signed in as " + status.live_tag + ".";
+    if (localTag && localTag !== status.live_tag) {
+      line = "Local tag: " + localTag + " · LIVE tag: " + status.live_tag + ".";
+    }
+    card.appendChild(el("p", "settings-note", line));
+    if (!status.email_verified) {
+      var verifyRow = el("div", "live-verify-row");
+      verifyRow.appendChild(
+        el(
+          "p",
+          "settings-note",
+          "Check your inbox to verify your email — friends and messages wait until then."
+        )
+      );
+      var resendBtn = el("button", "ghost", "Resend verification email");
+      resendBtn.type = "button";
+      resendBtn.addEventListener("click", function () {
+        resendBtn.disabled = true;
+        liveCall("live_resend_verification")
+          .then(function () {
+            setStatus("Verification email sent — check your inbox.", false);
+            return refreshLiveAll();
+          })
+          .catch(function (err) {
+            setStatus(liveErrMessage(err), true);
+            resendBtn.disabled = false;
+          });
+      });
+      verifyRow.appendChild(resendBtn);
+      card.appendChild(verifyRow);
+    }
+    renderLiveTagChange(card);
+    var row = el("div", "settings-row");
+    var friendsBtn = el("button", null, "Open Friends");
+    friendsBtn.type = "button";
+    friendsBtn.addEventListener("click", function () {
+      showView("friends");
+    });
+    row.appendChild(friendsBtn);
+    var signOutBtn = el("button", "ghost", "Sign out of KOVA LIVE");
+    signOutBtn.type = "button";
+    signOutBtn.addEventListener("click", function () {
+      signOutBtn.disabled = true;
+      liveCall("live_sign_out")
+        .then(function () {
+          liveOpenConversation = null;
+          liveFriendsCache = null;
+          liveConversationsCache = [];
+          liveJoinComplete = false;
+          setStatus("Signed out of KOVA LIVE. Your local profile is untouched.", false);
+          return refreshLiveAll();
+        })
+        .catch(function (err) {
+          setStatus(liveErrMessage(err), true);
+          signOutBtn.disabled = false;
+        });
+    });
+    row.appendChild(signOutBtn);
+    card.appendChild(row);
+  }
+
+  // Tag change (spec §2.2): once every 30 days, through the
+  // same availability check as sign-up. The old tag is held
+  // 30 days before anyone else can claim it.
+  function renderLiveTagChange(card) {
+    var status = liveStatusCache;
+    var wrap = el("div", "live-tag-change");
+    var tagInput = document.createElement("input");
+    tagInput.className = "text-input";
+    tagInput.type = "text";
+    tagInput.value = status.live_tag || "";
+    tagInput.maxLength = 32;
+    tagInput.setAttribute("aria-label", "New KOVA LIVE tag");
+    tagInput.spellcheck = false;
+    var note = el(
+      "p",
+      "profile-note",
+      "Tags can change once every 30 days. Your old tag is held for 30 days before anyone else can claim it."
+    );
+    var field = liveField("Change LIVE tag", tagInput);
+    field.appendChild(note);
+    var suggestionsRow = el("div", "settings-row live-suggestions");
+    field.appendChild(suggestionsRow);
+    wrap.appendChild(field);
+    var changeBtn = el("button", "ghost", "Change tag");
+    changeBtn.type = "button";
+    changeBtn.addEventListener("click", function () {
+      var value = tagInput.value.trim();
+      suggestionsRow.innerHTML = "";
+      if (!window.KovaLive) return;
+      var checked = window.KovaLive.validateTag(value);
+      if (!checked.ok) {
+        note.textContent = checked.error;
+        return;
+      }
+      if (checked.tag.toLowerCase() === (status.live_tag || "").toLowerCase()) {
+        note.textContent = "That is already your tag.";
+        return;
+      }
+      changeBtn.disabled = true;
+      note.textContent = "Checking…";
+      liveCall("live_check_tag", { tag: checked.tag })
+        .then(function (result) {
+          if (!result.available) {
+            note.textContent = checked.tag + " is taken — try one of these:";
+            (result.suggestions || []).forEach(function (suggestion) {
+              var sugBtn = el("button", "ghost live-suggestion", suggestion);
+              sugBtn.type = "button";
+              sugBtn.addEventListener("click", function () {
+                tagInput.value = suggestion;
+                suggestionsRow.innerHTML = "";
+                note.textContent = "";
+              });
+              suggestionsRow.appendChild(sugBtn);
+            });
+            changeBtn.disabled = false;
+            return null;
+          }
+          return liveCall("live_claim_tag", { tag: checked.tag });
+        })
+        .then(function (claimed) {
+          if (!claimed) return;
+          setStatus("Your LIVE tag is now " + claimed.live_tag + ".", false);
+          return refreshLiveAll().then(function () {
+            renderLiveJoin();
+          });
+        })
+        .catch(function (err) {
+          note.textContent = liveErrMessage(err);
+          changeBtn.disabled = false;
+        });
+    });
+    wrap.appendChild(changeBtn);
+    card.appendChild(wrap);
+  }
+
+  function liveField(labelText, input, hintText) {
+    var field = el("div", "profile-field");
+    field.appendChild(el("label", null, labelText));
+    field.appendChild(input);
+    if (hintText) field.appendChild(el("p", "profile-note", hintText));
+    return field;
+  }
+
+  function renderLiveSignupForm(card) {
+    var localTag = (gamerProfile().gamertag || "").trim();
+    var emailInput = document.createElement("input");
+    emailInput.className = "text-input";
+    emailInput.type = "email";
+    emailInput.placeholder = "you@example.com";
+    emailInput.setAttribute("aria-label", "Email address");
+    emailInput.autocomplete = "email";
+    card.appendChild(liveField("Email", emailInput, "Private — never shown to other players."));
+
+    var passwordInput = document.createElement("input");
+    passwordInput.className = "text-input";
+    passwordInput.type = "password";
+    passwordInput.placeholder = "At least 8 characters";
+    passwordInput.setAttribute("aria-label", "Password");
+    passwordInput.autocomplete = "new-password";
+    card.appendChild(liveField("Password", passwordInput));
+
+    var tagInput = document.createElement("input");
+    tagInput.className = "text-input";
+    tagInput.type = "text";
+    tagInput.value = localTag;
+    tagInput.placeholder = "Your KOVA LIVE tag";
+    tagInput.maxLength = 32;
+    tagInput.setAttribute("aria-label", "KOVA LIVE tag");
+    tagInput.spellcheck = false;
+    var tagNote = el("p", "profile-note", "3–32 characters: letters, numbers, spaces, _ and -. Your local gamertag is pre-filled — claim it if it is free.");
+    var tagField = liveField("KOVA LIVE tag", tagInput);
+    tagField.appendChild(tagNote);
+    var suggestionsRow = el("div", "settings-row live-suggestions");
+    tagField.appendChild(suggestionsRow);
+    card.appendChild(tagField);
+
+    var checkTimer = null;
+    function checkTagAvailability() {
+      var value = tagInput.value;
+      suggestionsRow.innerHTML = "";
+      if (!window.KovaLive) return;
+      var checked = window.KovaLive.validateTag(value);
+      if (!checked.ok) {
+        tagNote.textContent = checked.error;
+        return;
+      }
+      tagNote.textContent = "Checking…";
+      liveCall("live_check_tag", { tag: checked.tag })
+        .then(function (result) {
+          if (tagInput.value.trim() !== checked.tag) return;
+          if (result.available) {
+            tagNote.textContent = checked.tag + " is available.";
+          } else {
+            tagNote.textContent = checked.tag + " is taken — try one of these:";
+            (result.suggestions || []).forEach(function (suggestion) {
+              var sugBtn = el("button", "ghost live-suggestion", suggestion);
+              sugBtn.type = "button";
+              sugBtn.addEventListener("click", function () {
+                tagInput.value = suggestion;
+                checkTagAvailability();
+              });
+              suggestionsRow.appendChild(sugBtn);
+            });
+          }
+        })
+        .catch(function () {
+          tagNote.textContent = "Could not check that tag right now — try creating the account anyway.";
+        });
+    }
+    tagInput.addEventListener("input", function () {
+      if (checkTimer) window.clearTimeout(checkTimer);
+      checkTimer = window.setTimeout(checkTagAvailability, 400);
+    });
+    tagInput.addEventListener("blur", checkTagAvailability);
+
+    var note = el("p", "profile-note live-form-note");
+    card.appendChild(note);
+    var row = el("div", "settings-row");
+    var submitBtn = el("button", null, "Create account");
+    submitBtn.type = "button";
+    submitBtn.addEventListener("click", function () {
+      var email = emailInput.value.trim();
+      var password = passwordInput.value;
+      var tag = tagInput.value.trim();
+      if (!email || !password || !tag) {
+        note.textContent = "Fill in the email, password, and tag first.";
+        return;
+      }
+      submitBtn.disabled = true;
+      note.textContent = "";
+      liveCall("live_sign_up", { email: email, password: password, tag: tag })
+        .then(function () {
+          liveJoinComplete = true;
+          // Push the local avatar/bio to the new server profile
+          // (spec §2.3); a failed push never blocks sign-up.
+          liveCall("live_sync_profile").catch(function () {});
+          return refreshLiveStatus();
+        })
+        .then(function () {
+          renderLiveJoin();
+        })
+        .catch(function (err) {
+          note.textContent = liveErrMessage(err);
+          submitBtn.disabled = false;
+        });
+    });
+    row.appendChild(submitBtn);
+    card.appendChild(row);
+  }
+
+  function renderLiveSigninForm(card) {
+    var emailInput = document.createElement("input");
+    emailInput.className = "text-input";
+    emailInput.type = "email";
+    emailInput.placeholder = "you@example.com";
+    emailInput.setAttribute("aria-label", "Email address");
+    emailInput.autocomplete = "email";
+    card.appendChild(liveField("Email", emailInput));
+
+    var passwordInput = document.createElement("input");
+    passwordInput.className = "text-input";
+    passwordInput.type = "password";
+    passwordInput.placeholder = "Your password";
+    passwordInput.setAttribute("aria-label", "Password");
+    passwordInput.autocomplete = "current-password";
+    card.appendChild(liveField("Password", passwordInput));
+
+    var note = el("p", "profile-note live-form-note");
+    card.appendChild(note);
+    var row = el("div", "settings-row");
+    var submitBtn = el("button", null, "Sign in");
+    submitBtn.type = "button";
+    submitBtn.addEventListener("click", function () {
+      var email = emailInput.value.trim();
+      var password = passwordInput.value;
+      if (!email || !password) {
+        note.textContent = "Fill in the email and password first.";
+        return;
+      }
+      submitBtn.disabled = true;
+      note.textContent = "";
+      liveCall("live_sign_in", { email: email, password: password })
+        .then(function () {
+          // Retry the profile push on sign-in (spec §2.3).
+          liveCall("live_sync_profile").catch(function () {});
+          return refreshLiveAll();
+        })
+        .then(function () {
+          setStatus("Signed in to KOVA LIVE.", false);
+          renderLiveJoin();
+        })
+        .catch(function (err) {
+          note.textContent = liveErrMessage(err);
+          submitBtn.disabled = false;
+        });
+    });
+    row.appendChild(submitBtn);
+    card.appendChild(row);
+  }
+
+  // Sign-up completion: both privacy toggles, presented not
+  // buried (spec §4.3), plus the verification state.
+  function renderLiveJoinComplete(card) {
+    var status = liveStatusCache || {};
+    card.appendChild(
+      el(
+        "p",
+        "settings-note",
+        "You are in as " + (status.live_tag || "your tag") + ". Two choices before you start — both off means friends see you online and see what you are playing."
+      )
+    );
+    var toggles = el("div", "live-privacy-toggles");
+    toggles.appendChild(
+      livePrivacyToggle(
+        "Appear offline",
+        "Friends see you as offline. You still see everyone else normally.",
+        Boolean(status.appear_offline),
+        function (next) {
+          return liveCall("live_set_privacy", { appear_offline: next });
+        }
+      )
+    );
+    toggles.appendChild(
+      livePrivacyToggle(
+        "Hide what I'm playing",
+        "Friends see you as Online even mid-game; the game name is never sent.",
+        Boolean(status.hide_playing),
+        function (next) {
+          return liveCall("live_set_privacy", { hide_playing: next });
+        }
+      )
+    );
+    card.appendChild(toggles);
+    if (!status.email_verified) {
+      card.appendChild(
+        el(
+          "p",
+          "settings-note",
+          "Check your inbox to verify your email — friends and messages wait until then."
+        )
+      );
+      var resendBtn = el("button", "ghost", "Resend verification email");
+      resendBtn.type = "button";
+      resendBtn.addEventListener("click", function () {
+        resendBtn.disabled = true;
+        liveCall("live_resend_verification")
+          .then(function () {
+            setStatus("Verification email sent — check your inbox.", false);
+            return refreshLiveStatus();
+          })
+          .then(function () {
+            renderLiveJoin();
+          })
+          .catch(function (err) {
+            setStatus(liveErrMessage(err), true);
+            resendBtn.disabled = false;
+          });
+      });
+      card.appendChild(resendBtn);
+    }
+    var row = el("div", "settings-row");
+    var doneBtn = el("button", null, "Open Friends");
+    doneBtn.type = "button";
+    doneBtn.addEventListener("click", function () {
+      liveJoinComplete = false;
+      showView("friends");
+    });
+    row.appendChild(doneBtn);
+    card.appendChild(row);
+  }
+
+  function livePrivacyToggle(title, description, checked, onChange) {
+    var wrap = el("div", "live-privacy-row");
+    var label = el("label", "toggle-row");
+    var box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = checked;
+    box.addEventListener("change", function () {
+      box.disabled = true;
+      onChange(box.checked)
+        .then(function () {
+          return refreshLiveStatus();
+        })
+        .catch(function (err) {
+          box.checked = !box.checked;
+          setStatus(liveErrMessage(err), true);
+        })
+        .then(function () {
+          box.disabled = false;
+        });
+    });
+    label.appendChild(box);
+    label.appendChild(document.createTextNode(title));
+    wrap.appendChild(label);
+    wrap.appendChild(el("p", "profile-note", description));
+    return wrap;
+  }
+
+  // ------------------------------------------------------ friends view
+
+  function renderFriends() {
+    if (!liveFriendsEl) return;
+    var hadFocusSearch =
+      document.activeElement && document.activeElement.id === "live-search-input";
+    liveFriendsEl.innerHTML = "";
+
+    if (kidsEnabled()) {
+      var kidsBox = el("div", "settings-card live-kids-note");
+      kidsBox.appendChild(el("h2", null, "Friends are off here"));
+      kidsBox.appendChild(
+        el(
+          "p",
+          "settings-note",
+          "The Kids shelf is on, so KOVA LIVE — friends, presence, and messages — stays off on this shelf. Turn the Kids shelf off in Settings to use it."
+        )
+      );
+      liveFriendsEl.appendChild(kidsBox);
+      return;
+    }
+
+    if (liveNotConfigured) {
+      var ncBox = el("div", "settings-card");
+      ncBox.appendChild(el("h2", null, "KOVA LIVE is not set up yet"));
+      ncBox.appendChild(
+        el(
+          "p",
+          "settings-note",
+          "The online service has no address configured on this machine, so friends and messages are unavailable. Everything local works as before."
+        )
+      );
+      liveFriendsEl.appendChild(ncBox);
+      return;
+    }
+
+    if (!liveSignedIn()) {
+      var signedOut = el("div", "settings-card");
+      signedOut.appendChild(el("h2", null, "Sign in to KOVA LIVE to see friends"));
+      signedOut.appendChild(
+        el(
+          "p",
+          "settings-note",
+          "Friends live inside KOVA LIVE — add people by gamertag, see what they are playing, and message them. It is free, and your library never leaves this machine."
+        )
+      );
+      var joinBtn = el("button", null, "Join KOVA LIVE");
+      joinBtn.type = "button";
+      joinBtn.addEventListener("click", function () {
+        showView("profile");
+      });
+      signedOut.appendChild(joinBtn);
+      liveFriendsEl.appendChild(signedOut);
+      return;
+    }
+
+    var layout = el("div", "live-friends-layout");
+    if (liveOpenConversation) layout.classList.add("has-conversation");
+
+    var listCol = el("div", "live-friends-list");
+    renderFriendsPresenceLine(listCol);
+    renderFriendsSearch(listCol);
+    renderFriendsRequests(listCol);
+    renderFriendsConversations(listCol);
+    renderFriendsList(listCol);
+    layout.appendChild(listCol);
+
+    if (liveOpenConversation) {
+      var convoCol = el("div", "live-conversation-col");
+      renderConversationInto(convoCol, liveOpenConversation);
+      layout.appendChild(convoCol);
+    }
+
+    liveFriendsEl.appendChild(layout);
+
+    // Demo-only gate hook: ?demo=1&live-with=<tag> opens that
+    // conversation once, so the gate can photograph it.
+    if (
+      !liveGateOpened &&
+      !liveOpenConversation &&
+      window.KovaLive &&
+      window.KovaLive.isDemo()
+    ) {
+      try {
+        var withTag = new URLSearchParams(window.location.search).get("live-with");
+        if (withTag) {
+          liveGateOpened = true;
+          openConversation(withTag);
+        }
+      } catch (e) {
+        /* no gate hook */
+      }
+    }
+
+    if (hadFocusSearch) {
+      var searchInput = document.getElementById("live-search-input");
+      if (searchInput) searchInput.focus();
+    }
+    if (window.KovaNav) window.KovaNav.refresh();
+  }
+
+  // The presence line in the Friends header: what friends see of
+  // you, plus the Appear offline toggle (contract §8). With a
+  // parent it appends; without one it replaces the line already
+  // on screen (the 15s presence poll).
+  function renderFriendsPresenceLine(parent) {
+    var status = liveStatusCache || {};
+    var presence = livePresenceCache;
+    var line = el("div", "live-presence-line");
+    // Reads as a sentence: "You appear Online", "You appear
+    // offline", "You appear Online · Playing Dispatch HQ".
+    var stateText = "Online";
+    if (status.appear_offline || (presence && presence.state === "appear_offline")) {
+      stateText = "offline";
+    } else if (presence && presence.state === "in_game") {
+      stateText = presence.playing ? "Online · Playing " + presence.playing : "in game";
+    }
+    line.appendChild(el("span", "live-presence-text", "You appear " + stateText));
+    var label = el("label", "toggle-row live-appear-toggle");
+    var box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = Boolean(status.appear_offline);
+    box.setAttribute("aria-label", "Appear offline");
+    box.addEventListener("change", function () {
+      box.disabled = true;
+      liveCall("live_set_privacy", { appear_offline: box.checked })
+        .then(function () {
+          return refreshLiveStatus();
+        })
+        .then(function () {
+          return refreshLivePresence();
+        })
+        .catch(function (err) {
+          box.checked = !box.checked;
+          setStatus(liveErrMessage(err), true);
+        })
+        .then(function () {
+          box.disabled = false;
+        });
+    });
+    label.appendChild(box);
+    label.appendChild(document.createTextNode("Appear offline"));
+    line.appendChild(label);
+    if (parent) {
+      parent.appendChild(line);
+      return;
+    }
+    var existing = liveFriendsEl
+      ? liveFriendsEl.querySelector(".live-presence-line")
+      : null;
+    if (existing && existing.parentNode) {
+      existing.parentNode.replaceChild(line, existing);
+    }
+  }
+
+  function renderFriendsSearch(parent) {
+    var wrap = el("div", "live-search-wrap");
+    wrap.appendChild(el("h2", "live-section-title", "Add a friend"));
+    var row = el("div", "settings-row live-search-row");
+    var input = document.createElement("input");
+    input.id = "live-search-input";
+    input.className = "text-input";
+    input.type = "search";
+    input.placeholder = "Exact gamertag, e.g. Nova";
+    input.value = liveSearchQuery;
+    input.spellcheck = false;
+    input.setAttribute("aria-label", "Search for a player by gamertag");
+    input.addEventListener("input", function () {
+      liveSearchQuery = input.value;
+    });
+    input.addEventListener("keydown", function (event) {
+      if (event.key === "Enter") searchBtn.click();
+    });
+    row.appendChild(input);
+    var searchBtn = el("button", null, "Search");
+    searchBtn.type = "button";
+    searchBtn.addEventListener("click", function () {
+      var tag = input.value.trim();
+      liveSearchQuery = tag;
+      if (!tag) {
+        liveSearchState = "";
+        liveSearchResult = null;
+        renderFriends();
+        return;
+      }
+      searchBtn.disabled = true;
+      liveCall("live_search_tag", { tag: tag })
+        .then(function (result) {
+          liveSearchState = result.found ? "found" : "not-found";
+          liveSearchResult = result.found ? result.profile : null;
+          renderFriends();
+        })
+        .catch(function (err) {
+          setStatus(liveErrMessage(err), true);
+          searchBtn.disabled = false;
+        });
+    });
+    row.appendChild(searchBtn);
+    wrap.appendChild(row);
+    wrap.appendChild(
+      el(
+        "p",
+        "profile-note",
+        "Exact match only — type the full gamertag. Friends are KOVA-native: no one is imported from anywhere else."
+      )
+    );
+    if (liveSearchState === "not-found") {
+      wrap.appendChild(
+        el("p", "empty-note", "No player has that tag. Check the spelling — tags match exactly.")
+      );
+    } else if (liveSearchState === "found" && liveSearchResult) {
+      wrap.appendChild(renderSearchResult(liveSearchResult));
+    }
+    parent.appendChild(wrap);
+  }
+
+  function renderSearchResult(profile) {
+    var card = el("div", "live-search-result");
+    card.appendChild(friendAvatarElement(profile.avatar, profile.tag, "avatar-md"));
+    var body = el("div", "live-row-body");
+    body.appendChild(el("div", "live-row-tag", profile.tag));
+    if (profile.bio) {
+      var bioEl = el("div", "live-row-sub", profile.bio);
+      bioEl.title = profile.bio;
+      body.appendChild(bioEl);
+    }
+    card.appendChild(body);
+    var actions = el("div", "live-row-actions");
+    var isFriend = liveFriendsCache
+      ? liveFriendsCache.friends.some(function (f) {
+          return f.tag.toLowerCase() === profile.tag.toLowerCase();
+        })
+      : false;
+    var isPendingOut = liveFriendsCache
+      ? liveFriendsCache.requests_out.some(function (r) {
+          return r.to_tag.toLowerCase() === profile.tag.toLowerCase();
+        })
+      : false;
+    if (isFriend) {
+      var msgBtn = el("button", "ghost", "Message");
+      msgBtn.type = "button";
+      msgBtn.addEventListener("click", function () {
+        openConversation(profile.tag);
+      });
+      actions.appendChild(msgBtn);
+    } else if (isPendingOut) {
+      actions.appendChild(el("span", "live-row-sub", "Request sent"));
+    } else {
+      var addBtn = el("button", null, "Add friend");
+      addBtn.type = "button";
+      addBtn.addEventListener("click", function () {
+        addBtn.disabled = true;
+        liveCall("live_send_request", { tag: profile.tag })
+          .then(function () {
+            setStatus("Friend request sent to " + profile.tag + ".", false);
+            return refreshLiveAll();
+          })
+          .catch(function (err) {
+            setStatus(liveErrMessage(err), true);
+            addBtn.disabled = false;
+          });
+      });
+      actions.appendChild(addBtn);
+    }
+    var blockBtn = el("button", "ghost", "Block");
+    blockBtn.type = "button";
+    blockBtn.addEventListener("click", function () {
+      blockPlayer(profile.tag);
+    });
+    actions.appendChild(blockBtn);
+    card.appendChild(actions);
+    return card;
+  }
+
+  function renderFriendsRequests(parent) {
+    var data = liveFriendsCache;
+    if (!data) return;
+    var incoming = data.requests_in || [];
+    var outgoing = data.requests_out || [];
+    if (incoming.length === 0 && outgoing.length === 0) return;
+    var wrap = el("div", "live-requests-wrap");
+    wrap.appendChild(el("h2", "live-section-title", "Friend requests"));
+    incoming.forEach(function (request) {
+      var row = el("div", "live-row live-request-row");
+      row.appendChild(
+        friendAvatarElement(request.from_avatar, request.from_tag, "avatar-md")
+      );
+      var body = el("div", "live-row-body");
+      body.appendChild(el("div", "live-row-tag", request.from_tag));
+      body.appendChild(
+        el("div", "live-row-sub", request.from_bio || "Wants to be friends.")
+      );
+      row.appendChild(body);
+      var actions = el("div", "live-row-actions");
+      var acceptBtn = el("button", null, "Accept");
+      acceptBtn.type = "button";
+      acceptBtn.addEventListener("click", function () {
+        acceptBtn.disabled = true;
+        liveCall("live_accept_request", { request_id: request.id })
+          .then(function () {
+            setStatus(request.from_tag + " is now a friend.", false);
+            return refreshLiveAll();
+          })
+          .catch(function (err) {
+            setStatus(liveErrMessage(err), true);
+            acceptBtn.disabled = false;
+          });
+      });
+      actions.appendChild(acceptBtn);
+      var declineBtn = el("button", "ghost", "Decline");
+      declineBtn.type = "button";
+      declineBtn.addEventListener("click", function () {
+        declineBtn.disabled = true;
+        liveCall("live_decline_request", { request_id: request.id })
+          .then(function () {
+            return refreshLiveAll();
+          })
+          .catch(function (err) {
+            setStatus(liveErrMessage(err), true);
+            declineBtn.disabled = false;
+          });
+      });
+      actions.appendChild(declineBtn);
+      row.appendChild(actions);
+      wrap.appendChild(row);
+    });
+    outgoing.forEach(function (request) {
+      var row = el("div", "live-row live-request-row is-outgoing");
+      row.appendChild(friendAvatarElement("", request.to_tag, "avatar-md"));
+      var body = el("div", "live-row-body");
+      body.appendChild(el("div", "live-row-tag", request.to_tag));
+      body.appendChild(el("div", "live-row-sub", "Request sent — waiting for an answer."));
+      row.appendChild(body);
+      wrap.appendChild(row);
+    });
+    parent.appendChild(wrap);
+  }
+
+  function renderFriendsConversations(parent) {
+    var convos = liveConversationsCache || [];
+    if (convos.length === 0) return;
+    var wrap = el("div", "live-messages-wrap");
+    wrap.appendChild(el("h2", "live-section-title", "Messages"));
+    convos.forEach(function (convo) {
+      var row = el("div", "live-row live-convo-row");
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-label", "Open conversation with " + convo.tag);
+      var friend = liveFriendsCache
+        ? liveFriendsCache.friends.find(function (f) {
+            return f.tag.toLowerCase() === convo.tag.toLowerCase();
+          })
+        : null;
+      row.appendChild(
+        friendAvatarElement(friend ? friend.avatar : "", convo.tag, "avatar-md")
+      );
+      var body = el("div", "live-row-body");
+      body.appendChild(el("div", "live-row-tag", convo.tag));
+      var lastMsgEl = el("div", "live-row-sub live-last-message", convo.last_message || "");
+      lastMsgEl.title = convo.last_message || "";
+      body.appendChild(lastMsgEl);
+      row.appendChild(body);
+      if (convo.unread > 0) {
+        var badge = el("span", "count-badge", String(convo.unread));
+        badge.setAttribute("aria-label", convo.unread + " unread messages");
+        row.appendChild(badge);
+      }
+      var open = function () {
+        openConversation(convo.tag);
+      };
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      });
+      wrap.appendChild(row);
+    });
+    parent.appendChild(wrap);
+  }
+
+  function renderFriendsList(parent) {
+    var wrap = el("div", "live-friends-wrap");
+    var data = liveFriendsCache;
+    var friends = data ? data.friends || [] : [];
+    var sorted = window.KovaLive
+      ? window.KovaLive.sortFriends(friends)
+      : friends.slice();
+    wrap.appendChild(
+      el(
+        "h2",
+        "live-section-title",
+        "Friends" + (sorted.length > 0 ? " · " + sorted.length : "")
+      )
+    );
+    if (sorted.length === 0) {
+      wrap.appendChild(
+        el(
+          "p",
+          "empty-note",
+          // A null cache means the friends fetch is still in
+          // flight — say so instead of flashing "no friends".
+          data === null
+            ? "Loading friends…"
+            : "No friends yet — search a gamertag above to add someone."
+        )
+      );
+      parent.appendChild(wrap);
+      return;
+    }
+    sorted.forEach(function (friend) {
+      var offline = friend.presence === "offline";
+      var row = el("div", "live-row live-friend-row" + (offline ? " is-offline" : ""));
+      row.dataset.navKey = "live-friend:" + friend.tag;
+      var avatarWrap = el("span", "live-avatar-wrap");
+      avatarWrap.appendChild(
+        friendAvatarElement(friend.avatar, friend.tag, "avatar-md")
+      );
+      avatarWrap.appendChild(el("span", presenceDotClass(friend.presence)));
+      row.appendChild(avatarWrap);
+      var body = el("div", "live-row-body");
+      body.appendChild(el("div", "live-row-tag", friend.tag));
+      var presenceText = window.KovaLive
+        ? window.KovaLive.presenceLabel(friend)
+        : friend.presence;
+      var presenceEl = el("div", "live-row-sub live-presence", presenceText);
+      presenceEl.title = presenceText;
+      body.appendChild(presenceEl);
+      row.appendChild(body);
+      var actions = el("div", "live-row-actions");
+      var msgBtn = el("button", null, "Message");
+      msgBtn.type = "button";
+      msgBtn.addEventListener("click", function () {
+        openConversation(friend.tag);
+      });
+      actions.appendChild(msgBtn);
+      var removeBtn = el("button", "ghost", "Remove");
+      removeBtn.type = "button";
+      removeBtn.setAttribute("aria-label", "Remove " + friend.tag + " from friends");
+      removeBtn.addEventListener("click", function () {
+        removeBtn.disabled = true;
+        liveCall("live_remove_friend", { tag: friend.tag })
+          .then(function () {
+            if (liveOpenConversation === friend.tag) liveOpenConversation = null;
+            return refreshLiveAll();
+          })
+          .catch(function (err) {
+            setStatus(liveErrMessage(err), true);
+            removeBtn.disabled = false;
+          });
+      });
+      actions.appendChild(removeBtn);
+      row.appendChild(actions);
+      wrap.appendChild(row);
+    });
+    parent.appendChild(wrap);
+  }
+
+  // ------------------------------------------------------ conversation
+
+  function openConversation(tag) {
+    liveOpenConversation = tag;
+    renderFriends();
+    // Loading the messages marks the conversation read, which
+    // clears its unread badge on the next refresh.
+    liveCall("live_get_messages", { tag: tag })
+      .then(function () {
+        return liveCall("live_get_conversations");
+      })
+      .then(function (convos) {
+        liveConversationsCache = convos || [];
+        if (currentView === "friends" && liveOpenConversation === tag) renderFriends();
+      })
+      .catch(function () {
+        /* the panel shows its own error state */
+      });
+  }
+
+  function closeConversation() {
+    liveOpenConversation = null;
+    renderFriends();
+  }
+
+  function renderConversationInto(host, tag) {
+    host.innerHTML = "";
+    var panel = el("div", "live-conversation");
+    var friend = liveFriendsCache
+      ? liveFriendsCache.friends.find(function (f) {
+          return f.tag.toLowerCase() === tag.toLowerCase();
+        })
+      : null;
+
+    var head = el("div", "live-convo-head");
+    head.appendChild(friendAvatarElement(friend ? friend.avatar : "", tag, "avatar-md"));
+    var headBody = el("div", "live-row-body");
+    headBody.appendChild(el("div", "live-row-tag", tag));
+    // No friend record means we do not know their presence — a
+    // conversation can outlive the friendship (or predate it).
+    // Say nothing rather than a wrong "Offline".
+    if (friend && window.KovaLive) {
+      headBody.appendChild(
+        el("div", "live-row-sub live-presence", window.KovaLive.presenceLabel(friend))
+      );
+    }
+    head.appendChild(headBody);
+    var headActions = el("div", "live-row-actions");
+    var reportBtn = el("button", "ghost live-small", "Report");
+    reportBtn.type = "button";
+    reportBtn.setAttribute("aria-label", "Report " + tag);
+    reportBtn.addEventListener("click", function () {
+      openReportForm(host, "profile", tag, null);
+    });
+    headActions.appendChild(reportBtn);
+    var blockBtn = el("button", "ghost live-small", "Block");
+    blockBtn.type = "button";
+    blockBtn.setAttribute("aria-label", "Block " + tag);
+    blockBtn.addEventListener("click", function () {
+      blockPlayer(tag);
+    });
+    headActions.appendChild(blockBtn);
+    var closeBtn = el("button", "ghost live-small", "Close");
+    closeBtn.type = "button";
+    closeBtn.setAttribute("aria-label", "Close conversation");
+    closeBtn.addEventListener("click", closeConversation);
+    headActions.appendChild(closeBtn);
+    head.appendChild(headActions);
+    panel.appendChild(head);
+
+    var history = el("div", "live-history");
+    history.appendChild(el("p", "empty-note", "Loading messages…"));
+    panel.appendChild(history);
+
+    // Sending is friends-only (contract §3): a conversation with
+    // someone who is not a friend shows the way back in, not a
+    // composer that can only fail.
+    if (!friend) {
+      var notice = el("div", "live-composer live-not-friend");
+      notice.appendChild(
+        el("span", "settings-note", tag + " is not a friend yet — add them to send messages.")
+      );
+      var addBtn = el("button", "primary", "Add friend");
+      addBtn.type = "button";
+      addBtn.addEventListener("click", function () {
+        addBtn.disabled = true;
+        liveCall("live_send_request", { tag: tag })
+          .then(function () {
+            setStatus("Friend request sent to " + tag + ".", false);
+            return refreshLiveAll();
+          })
+          .catch(function (err) {
+            setStatus(liveErrMessage(err), true);
+            addBtn.disabled = false;
+          });
+      });
+      notice.appendChild(addBtn);
+      panel.appendChild(notice);
+      host.appendChild(panel);
+    } else {
+      var composer = el("div", "live-composer");
+      var input = document.createElement("input");
+      input.className = "text-input";
+      input.type = "text";
+      input.placeholder = "Message " + tag;
+    input.maxLength = 2000;
+    input.value = liveComposerDrafts[tag] || "";
+    input.setAttribute("aria-label", "Message " + tag);
+    input.addEventListener("input", function () {
+      liveComposerDrafts[tag] = input.value;
+    });
+    var sendBtn = el("button", null, "Send");
+    sendBtn.type = "button";
+    var send = function () {
+      var body = input.value;
+      if (!body.trim()) return;
+      sendBtn.disabled = true;
+      liveCall("live_send_message", { to_tag: tag, body: body })
+        .then(function () {
+          input.value = "";
+          liveComposerDrafts[tag] = "";
+          renderConversationInto(host, tag);
+          return liveCall("live_get_conversations");
+        })
+        .then(function (convos) {
+          liveConversationsCache = convos || [];
+        })
+        .catch(function (err) {
+          // A failed send keeps the draft in the text box (spec §8).
+          setStatus(liveErrMessage(err), true);
+        })
+        .then(function () {
+          sendBtn.disabled = false;
+        });
+    };
+    sendBtn.addEventListener("click", send);
+    input.addEventListener("keydown", function (event) {
+      if (event.key === "Enter") send();
+    });
+    composer.appendChild(input);
+    composer.appendChild(sendBtn);
+    panel.appendChild(composer);
+
+    host.appendChild(panel);
+    }
+
+    liveCall("live_get_messages", { tag: tag })
+      .then(function (result) {
+        if (liveOpenConversation !== tag) return;
+        history.innerHTML = "";
+        var messages = result.messages || [];
+        if (messages.length === 0) {
+          history.appendChild(
+            el("p", "empty-note", "No messages yet — say hello.")
+          );
+          return;
+        }
+        messages.forEach(function (message) {
+          var bubble = el(
+            "div",
+            "live-message" + (message.mine ? " is-mine" : " is-theirs")
+          );
+          var bubbleBody = el("div", "live-message-body", message.body);
+          bubble.appendChild(bubbleBody);
+          var meta = el("div", "live-message-meta");
+          meta.appendChild(
+            el(
+              "span",
+              "live-message-time",
+              formatDateTime(message.sent_at)
+            )
+          );
+          if (message.mine) {
+            var delBtn = el("button", "live-text-btn", "Delete");
+            delBtn.type = "button";
+            delBtn.setAttribute("aria-label", "Delete this message");
+            delBtn.addEventListener("click", function () {
+              liveCall("live_delete_message", { message_id: message.id })
+                .then(function () {
+                  renderConversationInto(host, tag);
+                })
+                .catch(function (err) {
+                  setStatus(liveErrMessage(err), true);
+                });
+            });
+            meta.appendChild(delBtn);
+          } else {
+            var repBtn = el("button", "live-text-btn", "Report");
+            repBtn.type = "button";
+            repBtn.setAttribute("aria-label", "Report this message");
+            repBtn.addEventListener("click", function () {
+              openReportForm(host, "message", message.id, tag);
+            });
+            meta.appendChild(repBtn);
+          }
+          bubble.appendChild(meta);
+          history.appendChild(bubble);
+        });
+        history.scrollTop = history.scrollHeight;
+      })
+      .catch(function (err) {
+        if (liveOpenConversation !== tag) return;
+        history.innerHTML = "";
+        history.appendChild(el("p", "empty-note", liveErrMessage(err)));
+      });
+  }
+
+  function renderConversation(tag) {
+    if (currentView !== "friends") return;
+    var host = document.querySelector(".live-conversation-col");
+    if (host && liveOpenConversation === tag) renderConversationInto(host, tag);
+  }
+
+  // Report form: one tap + an optional short note. Reports go
+  // to a review queue read by the Avok team (spec §5.4).
+  function openReportForm(host, kind, ref, convoTag) {
+    var panel = host.querySelector(".live-conversation");
+    if (!panel) return;
+    var existing = panel.querySelector(".live-report-form");
+    if (existing) existing.remove();
+    var form = el("div", "live-report-form");
+    form.appendChild(
+      el(
+        "p",
+        "settings-note",
+        kind === "message"
+          ? "Report this message to the Avok team — a human reads every report."
+          : "Report this profile to the Avok team — a human reads every report."
+      )
+    );
+    var noteInput = document.createElement("textarea");
+    noteInput.className = "text-input live-report-note";
+    noteInput.placeholder = "What happened? (optional)";
+    noteInput.maxLength = 500;
+    noteInput.setAttribute("aria-label", "Report note");
+    form.appendChild(noteInput);
+    var row = el("div", "settings-row");
+    var submitBtn = el("button", null, "Send report");
+    submitBtn.type = "button";
+    submitBtn.addEventListener("click", function () {
+      submitBtn.disabled = true;
+      liveCall("live_report", {
+        kind: kind,
+        ref_: ref,
+        note: noteInput.value.trim(),
+      })
+        .then(function () {
+          setStatus("Report sent — a member of the Avok team will read it.", false);
+          if (convoTag) renderConversationInto(host, convoTag);
+          else if (liveOpenConversation) renderConversationInto(host, liveOpenConversation);
+        })
+        .catch(function (err) {
+          setStatus(liveErrMessage(err), true);
+          submitBtn.disabled = false;
+        });
+    });
+    row.appendChild(submitBtn);
+    var cancelBtn = el("button", "ghost", "Cancel");
+    cancelBtn.type = "button";
+    cancelBtn.addEventListener("click", function () {
+      form.remove();
+    });
+    row.appendChild(cancelBtn);
+    form.appendChild(row);
+    panel.appendChild(form);
+    noteInput.focus();
+  }
+
+  function blockPlayer(tag) {
+    liveCall("live_block", { tag: tag })
+      .then(function () {
+        if (liveOpenConversation === tag) liveOpenConversation = null;
+        liveSearchState = "";
+        liveSearchResult = null;
+        setStatus(tag + " is blocked. They cannot see you or message you.", false);
+        return refreshLiveAll();
+      })
+      .catch(function (err) {
+        setStatus(liveErrMessage(err), true);
+      });
+  }
+
+  // ------------------------------------------------- settings: LIVE
+
+  function renderLiveSettings() {
+    if (!liveSettingsEl) return;
+    liveSettingsEl.innerHTML = "";
+
+    if (kidsEnabled()) {
+      liveSettingsEl.appendChild(
+        el(
+          "p",
+          "settings-note",
+          "KOVA LIVE is off while the Kids shelf is on — no sign-in, no friends, no messages on this shelf."
+        )
+      );
+      return;
+    }
+
+    if (liveNotConfigured) {
+      liveSettingsEl.appendChild(
+        el(
+          "p",
+          "settings-note",
+          "KOVA LIVE is not set up yet on this machine — the online service has no address configured."
+        )
+      );
+      return;
+    }
+
+    if (!liveSignedIn()) {
+      liveSettingsEl.appendChild(
+        el(
+          "p",
+          "settings-note",
+          "Sign in to KOVA LIVE from your Profile to manage presence, blocked players, and your account."
+        )
+      );
+      var joinBtn = el("button", "ghost", "Join KOVA LIVE");
+      joinBtn.type = "button";
+      joinBtn.addEventListener("click", function () {
+        showView("profile");
+      });
+      liveSettingsEl.appendChild(joinBtn);
+      return;
+    }
+
+    var status = liveStatusCache;
+    liveSettingsEl.appendChild(
+      el("p", "settings-note", "Signed in as " + status.live_tag + ".")
+    );
+
+    var toggles = el("div", "live-privacy-toggles");
+    toggles.appendChild(
+      livePrivacyToggle(
+        "Appear offline",
+        "Friends see you as offline. You still see everyone else normally.",
+        Boolean(status.appear_offline),
+        function (next) {
+          return liveCall("live_set_privacy", { appear_offline: next });
+        }
+      )
+    );
+    toggles.appendChild(
+      livePrivacyToggle(
+        "Hide what I'm playing",
+        "Friends see you as Online even mid-game; the game name is never sent.",
+        Boolean(status.hide_playing),
+        function (next) {
+          return liveCall("live_set_privacy", { hide_playing: next });
+        }
+      )
+    );
+    liveSettingsEl.appendChild(toggles);
+
+    // Blocked list.
+    var blocked = (liveFriendsCache && liveFriendsCache.blocked) || [];
+    var blockedHead = el("h3", "live-subhead", "Blocked players");
+    liveSettingsEl.appendChild(blockedHead);
+    if (blocked.length === 0) {
+      liveSettingsEl.appendChild(
+        el("p", "settings-note", "No blocked players. Blocked players cannot see you, message you, or find you by tag.")
+      );
+    } else {
+      var list = el("div", "folder-list");
+      blocked.forEach(function (tag) {
+        var row = el("div", "folder-row");
+        row.appendChild(el("span", "folder-path", tag));
+        var unblockBtn = el("button", "ghost folder-remove", "Unblock");
+        unblockBtn.type = "button";
+        unblockBtn.addEventListener("click", function () {
+          unblockBtn.disabled = true;
+          liveCall("live_unblock", { tag: tag })
+            .then(function () {
+              setStatus(tag + " is unblocked. They can find you by tag again — they are not a friend again.", false);
+              return refreshLiveAll();
+            })
+            .catch(function (err) {
+              setStatus(liveErrMessage(err), true);
+              unblockBtn.disabled = false;
+            });
+        });
+        row.appendChild(unblockBtn);
+        list.appendChild(row);
+      });
+      liveSettingsEl.appendChild(list);
+    }
+
+    // Delete account — last, in a section of its own, with the
+    // consequence in words and a confirmation that names the tag.
+    var danger = el("div", "live-danger-zone");
+    danger.appendChild(el("h3", "live-subhead", "Delete my KOVA LIVE account"));
+    danger.appendChild(
+      el(
+        "p",
+        "settings-note",
+        "This removes your account, your friends, your requests, your blocks, and every message you sent — for both sides. Your tag is held for 30 days, then freed. Your local profile on this machine is untouched. This cannot be undone."
+      )
+    );
+    if (!liveDeleteArmed) {
+      var armBtn = el("button", "ghost live-danger-btn", "Delete my KOVA LIVE account");
+      armBtn.type = "button";
+      armBtn.addEventListener("click", function () {
+        liveDeleteArmed = true;
+        renderLiveSettings();
+      });
+      danger.appendChild(armBtn);
+    } else {
+      var confirmInput = document.createElement("input");
+      confirmInput.className = "text-input";
+      confirmInput.type = "text";
+      confirmInput.placeholder = "Type " + status.live_tag + " to confirm";
+      confirmInput.setAttribute("aria-label", "Type your LIVE tag to confirm deletion");
+      confirmInput.spellcheck = false;
+      danger.appendChild(confirmInput);
+      var confirmRow = el("div", "settings-row live-delete-row");
+      var deleteBtn = el("button", "live-danger-btn", "Delete my account");
+      deleteBtn.type = "button";
+      deleteBtn.disabled = true;
+      confirmInput.addEventListener("input", function () {
+        deleteBtn.disabled = confirmInput.value.trim() !== status.live_tag;
+      });
+      deleteBtn.addEventListener("click", function () {
+        deleteBtn.disabled = true;
+        liveCall("live_delete_account", { confirm_tag: status.live_tag })
+          .then(function () {
+            liveDeleteArmed = false;
+            liveOpenConversation = null;
+            liveFriendsCache = null;
+            liveConversationsCache = [];
+            liveJoinComplete = false;
+            setStatus("Your KOVA LIVE account is deleted. Your local profile is untouched.", false);
+            return refreshLiveAll();
+          })
+          .catch(function (err) {
+            setStatus(liveErrMessage(err), true);
+            deleteBtn.disabled = false;
+          });
+      });
+      confirmRow.appendChild(deleteBtn);
+      var cancelBtn = el("button", "ghost", "Keep my account");
+      cancelBtn.type = "button";
+      cancelBtn.addEventListener("click", function () {
+        liveDeleteArmed = false;
+        renderLiveSettings();
+      });
+      confirmRow.appendChild(cancelBtn);
+      danger.appendChild(confirmRow);
+    }
+    liveSettingsEl.appendChild(danger);
+  }
 
   // ------------------------------------------------------------ exports
 
@@ -2506,6 +4227,12 @@
     openBigPicture: openBigPicture,
     closeBigPicture: closeBigPicture,
     toggleBigPicture: toggleBigPicture,
+    onViewShown: liveOnViewShown,
+    liveStatus: liveStatus,
+    refreshLiveHeader: refreshLiveHeader,
+    renderFriends: renderFriends,
+    renderLiveJoin: renderLiveJoin,
+    renderLiveSettings: renderLiveSettings,
     refreshMilestones: function () {
       renderMilestones(true);
     },
