@@ -191,15 +191,18 @@ pub fn validate_shelves(shelves: Vec<Shelf>, known_keys: &HashSet<String>) -> Ve
 
 /// Beta program settings. Off by default; the current UI stays the
 /// main UI for everyone not in the beta. When beta is on, a UI
-/// selector appears in Settings (Classic / Beta) and the choice is
-/// remembered across launches.
+/// selector appears in Settings (Classic / Beta / Stage while it is
+/// in its beta run) and the choice is remembered across launches.
+/// A new UI graduates into the main selector 30 days after its
+/// stamped beta start (`ui_beta_start`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BetaSettings {
     /// Whether the player joined the beta program.
     #[serde(default)]
     pub opted_in: bool,
     /// `"classic"` (the current UI) or `"beta"` (the new light
-    /// shell). Defaults to `"classic"`.
+    /// shell) or `"third"` (Stage, the gaming-OS home). Defaults
+    /// to `"classic"`.
     #[serde(default = "default_beta_ui")]
     pub ui: String,
     /// Beta shell accent: `"cyan"` / `"raspberry"` / `"amber"` /
@@ -215,6 +218,13 @@ pub struct BetaSettings {
     /// the listed ones (the UI resolves this).
     #[serde(default)]
     pub shelf_order: Vec<String>,
+    /// Per-UI beta start dates (unix seconds), e.g.
+    /// `{"third": 1794690000}`. Stamped the first time the player
+    /// selects a new UI; the UI graduates out of beta 30 days
+    /// after its stamped start (see `app/src/ui-lifecycle.js`).
+    /// Defaults to empty (no UI has started a beta run).
+    #[serde(default)]
+    pub ui_beta_start: std::collections::HashMap<String, u64>,
 }
 
 fn default_beta_ui() -> String {
@@ -237,6 +247,7 @@ impl Default for BetaSettings {
             accent: default_beta_accent(),
             density: default_beta_density(),
             shelf_order: Vec::new(),
+            ui_beta_start: std::collections::HashMap::new(),
         }
     }
 }
@@ -246,7 +257,7 @@ impl Default for BetaSettings {
 /// the UI must always have a usable shell); `shelf_order` is
 /// trimmed, emptied of blanks, and de-duplicated.
 pub fn normalize_beta(mut beta: BetaSettings) -> BetaSettings {
-    if beta.ui != "classic" && beta.ui != "beta" {
+    if beta.ui != "classic" && beta.ui != "beta" && beta.ui != "third" {
         beta.ui = default_beta_ui();
     }
     if !["cyan", "raspberry", "amber", "emerald"].contains(&beta.accent.as_str()) {
@@ -851,6 +862,7 @@ mod tests {
                 "".to_string(),
                 "backlog".to_string(),
             ],
+            ui_beta_start: std::collections::HashMap::new(),
         });
         assert!(beta.opted_in);
         assert_eq!(beta.ui, "classic");
@@ -864,10 +876,40 @@ mod tests {
             accent: "raspberry".to_string(),
             density: "compact".to_string(),
             shelf_order: vec![],
+            ui_beta_start: std::collections::HashMap::new(),
         });
         assert_eq!(good.ui, "beta");
         assert_eq!(good.accent, "raspberry");
         assert_eq!(good.density, "compact");
+    }
+
+    #[test]
+    fn beta_normalization_accepts_third_and_keeps_start_stamps() {
+        let mut starts = std::collections::HashMap::new();
+        starts.insert("third".to_string(), 1794690000u64);
+        let third = normalize_beta(BetaSettings {
+            opted_in: true,
+            ui: "third".to_string(),
+            accent: "cyan".to_string(),
+            density: "comfortable".to_string(),
+            shelf_order: vec![],
+            ui_beta_start: starts,
+        });
+        assert_eq!(third.ui, "third");
+        assert_eq!(third.ui_beta_start.get("third"), Some(&1794690000u64));
+    }
+
+    #[test]
+    fn beta_ui_beta_start_defaults_when_missing() {
+        // A state file written before the third UI existed has no
+        // ui_beta_start key — it must still load, with an empty map.
+        let beta: BetaSettings = serde_json::from_str(
+            r#"{"opted_in":true,"ui":"third","accent":"cyan","density":"comfortable","shelf_order":[]}"#,
+        )
+        .expect("old state files lack ui_beta_start");
+        assert_eq!(beta.ui, "third");
+        assert!(beta.ui_beta_start.is_empty());
+        assert!(BetaSettings::default().ui_beta_start.is_empty());
     }
 
     #[test]

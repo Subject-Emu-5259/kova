@@ -4,10 +4,15 @@
     <meta charset="UTF-8" />
     <!-- v1.2.0 §11 — shell boot contract. Runs before the classic
          app renders: when the player opted into the beta AND picked
-         the beta UI, this window hands off to the beta shell. The
-         beta shell carries the reverse guard. A brief flash of the
-         classic UI on beta startup is acceptable. If Tauri is not
-         available (or the state cannot be read), classic renders. -->
+         the beta UI, this window hands off to the beta shell; when
+         the player picked Stage ("third") and may run it (beta
+         member, or graduated after its 30-day beta run — see
+         ui-lifecycle.js), it hands off to the third shell. The
+         other shells carry the reverse guards. A brief flash of
+         the classic UI on beta startup is acceptable. If Tauri is
+         not available (or the state cannot be read), classic
+         renders. -->
+    <script src="ui-lifecycle.js"></script>
     <script>
       (function () {
         function bootCheck() {
@@ -15,12 +20,17 @@
             var core = window.__TAURI__ && window.__TAURI__.core;
             if (!core || !core.invoke) return;
             core.invoke("get_state").then(function (state) {
-              if (
-                state &&
-                state.beta &&
-                state.beta.opted_in &&
-                state.beta.ui === "beta"
-              ) {
+              var beta = (state && state.beta) || {};
+              // Stage runs for beta members, or for anyone once it
+              // graduates. If ui-lifecycle.js failed to load, fall
+              // back to opted-in-only gating.
+              var mayRunThird =
+                window.KovaUi && window.KovaUi.mayRun
+                  ? window.KovaUi.mayRun(beta, "third")
+                  : !!beta.opted_in;
+              if (beta.ui === "third" && mayRunThird) {
+                window.location.replace("third/index.html");
+              } else if (beta.opted_in && beta.ui === "beta") {
                 window.location.replace("beta/index.html");
               }
             }).catch(function () {});

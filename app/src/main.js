@@ -2078,9 +2078,13 @@ let pendingUpdateVersion = null;
 // feed's notes still drive the available-update display. Bump
 // APP_VERSION with each release and add its notes at the top of
 // RELEASE_ORDER.
-const APP_VERSION = "1.3.3";
-const RELEASE_ORDER = ["1.3.3", "1.3.2", "1.3.1", "1.3.0", "1.2.1", "1.2.0"];
+const APP_VERSION = "1.4.0";
+const RELEASE_ORDER = ["1.4.0", "1.3.3", "1.3.2", "1.3.1", "1.3.0", "1.2.1", "1.2.0"];
 const RELEASE_NOTES = {
+  "1.4.0": [
+    "Meet Stage — the third UI: a gaming-OS home with one hero game, dashboard rows, and an art-first library.",
+    "Stage starts in beta and graduates to the main UI selector after its 30-day run.",
+  ],
   "1.3.3": [
     "Your wishlist now shows in the beta Profile, not just Classic.",
     "Cloud sync gets an on/off switch — it only runs when you want it to.",

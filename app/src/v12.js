@@ -2042,17 +2042,37 @@
     toggle.checked = Boolean(beta.opted_in);
     toggle.addEventListener("change", function () {
       if (!invoke) return;
+      // Leaving the beta: a UI that still needs the beta falls back
+      // to Classic; a graduated UI (Stage after its 30-day run)
+      // keeps running without the beta.
+      var staysWithoutBeta =
+        window.KovaUi && window.KovaUi.mayRun
+          ? window.KovaUi.mayRun(
+              Object.assign({}, beta, { opted_in: false }),
+              beta.ui
+            )
+          : beta.ui === "classic";
+      var nextUi = toggle.checked
+        ? beta.ui
+        : staysWithoutBeta
+          ? beta.ui
+          : "classic";
       var next = {
         opted_in: toggle.checked,
-        // Leaving the beta always lands back on Classic.
-        ui: toggle.checked ? beta.ui : "classic",
+        ui: nextUi,
         accent: beta.accent,
         density: beta.density,
         shelf_order: beta.shelf_order,
+        ui_beta_start: beta.ui_beta_start,
       };
       invoke("set_beta", { beta: next })
         .then(function (updated) {
           applyState(updated);
+          if (!toggle.checked && nextUi === "third") {
+            // Left the beta but Stage graduated: land on Stage.
+            window.location.href = "third/index.html";
+            return;
+          }
           setStatus(
             toggle.checked
               ? "You're in the KOVA beta — pick a UI below to try the new shell."
@@ -2068,14 +2088,25 @@
     toggleRow.appendChild(document.createTextNode("Join the KOVA beta"));
     betaSettingsEl.appendChild(toggleRow);
 
-    // The UI selector appears ONLY when opted in.
-    if (beta.opted_in) {
+    // The UI selector appears when opted in, or when a graduated UI
+    // (Stage, after its 30-day beta run) is available to everyone —
+    // a non-beta player then sees Classic + Stage, not Beta.
+    var availableUis =
+      window.KovaUi && window.KovaUi.availableUis
+        ? window.KovaUi.availableUis(beta)
+        : beta.opted_in
+          ? ["classic", "beta"]
+          : ["classic"];
+    if (availableUis.length > 1) {
       var selector = el("div", "beta-ui-selector");
       selector.appendChild(el("span", "field-label", "Interface"));
-      [
-        ["classic", "Classic", "The current KOVA UI."],
-        ["beta", "Beta", "The brand-new light UI. Switching reloads the app into the beta shell."],
-      ].forEach(function (entry) {
+      var UI_OPTIONS = {
+        classic: ["Classic", "The current KOVA UI."],
+        beta: ["Beta", "The brand-new light UI. Switching reloads the app into the beta shell."],
+        third: ["Stage", "The gaming-OS home: one hero game, rows, art-first library."],
+      };
+      availableUis.forEach(function (uiId) {
+        var entry = [uiId, UI_OPTIONS[uiId][0], UI_OPTIONS[uiId][1]];
         var label = el("label", "launch-mode-option");
         var radio = document.createElement("input");
         radio.type = "radio";
@@ -2084,19 +2115,18 @@
         radio.checked = beta.ui === entry[0];
         radio.addEventListener("change", function () {
           if (!invoke || !radio.checked) return;
-          invoke("set_beta", {
-            beta: {
-              opted_in: beta.opted_in,
-              ui: entry[0],
-              accent: beta.accent,
-              density: beta.density,
-              shelf_order: beta.shelf_order,
-            },
-          })
+          var nextBeta = Object.assign({}, beta, { ui: entry[0] });
+          // Picking Stage for the first time stamps its beta start.
+          if (entry[0] === "third" && window.KovaUi && window.KovaUi.withStartStamp) {
+            nextBeta = window.KovaUi.withStartStamp(nextBeta, "third");
+          }
+          invoke("set_beta", { beta: nextBeta })
             .then(function (updated) {
               if (updated) appState = normalizeState(updated);
               if (entry[0] === "beta") {
                 window.location.href = "beta/index.html";
+              } else if (entry[0] === "third") {
+                window.location.href = "third/index.html";
               } else {
                 renderAll();
               }

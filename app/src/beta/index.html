@@ -19,6 +19,11 @@
   rel="stylesheet"
 />
 <link rel="stylesheet" href="beta.css" />
+<!-- ui-lifecycle.js loads synchronously before the guard so the
+     beta shell's Settings (beta.js) can use window.KovaUi. The
+     guard itself needs no lifecycle check: any ui that is not
+     "beta" — including "third" — hands back to classic. -->
+<script src="../ui-lifecycle.js"></script>
 <script>
   // SHELL GUARD — runs before anything renders. Inside the app,
   // the beta shell only shows when the player opted in AND picked

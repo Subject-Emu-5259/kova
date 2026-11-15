@@ -391,7 +391,7 @@ function demoCall(cmd, args) {
     case "import_state":
       return Promise.resolve(JSON.parse(JSON.stringify(DEMO_STATE)));
     case "check_update":
-      return Promise.resolve({ available: false, version: null, current_version: "1.3.3", notes: null });
+      return Promise.resolve({ available: false, version: null, current_version: "1.4.0", notes: null });
     case "launch_game":
     case "launch_uri":
     case "notify_update_available":
@@ -3178,18 +3178,32 @@ function renderSettings() {
       beta.opted_in,
       async (next, toggle) => {
         if (!next) {
+          // Leaving the beta: a UI that still needs the beta falls
+          // back to Classic; a graduated UI (Stage after its
+          // 30-day run) keeps running without the beta.
+          const staysWithoutBeta =
+            window.KovaUi && window.KovaUi.mayRun
+              ? window.KovaUi.mayRun(
+                  Object.assign({}, beta, { opted_in: false }),
+                  beta.ui
+                )
+              : beta.ui === "classic";
+          const leaveUi = staysWithoutBeta ? beta.ui : "classic";
           if (
             !window.confirm(
-              "Leave the beta? The classic UI returns, and your beta choices (accent, density, shelf order) stay saved for next time."
+              leaveUi === "third"
+                ? "Leave the beta? Stage stays — it graduated from beta — and your beta choices (accent, density, shelf order) stay saved for next time."
+                : "Leave the beta? The classic UI returns, and your beta choices (accent, density, shelf order) stay saved for next time."
             )
           ) {
             return;
           }
           const updated = await call("set_beta", {
-            beta: Object.assign({}, beta, { opted_in: false, ui: "classic" }),
+            beta: Object.assign({}, beta, { opted_in: false, ui: leaveUi }),
           });
           if (updated) {
-            window.location.href = "../index.html";
+            window.location.href =
+              leaveUi === "third" ? "../third/index.html" : "../index.html";
             return;
           }
           setStatus("Could not leave the beta.", true);
@@ -3209,31 +3223,45 @@ function renderSettings() {
       beta.opted_in ? "In the beta" : "Not in the beta"
     )
   );
-  const uiField = el("div", "field");
-  uiField.style.marginTop = "20px";
-  uiField.appendChild(el("label", null, "Interface"));
-  const uiSeg = el("div", "segmented");
-  uiSeg.setAttribute("role", "group");
-  uiSeg.setAttribute("aria-label", "Interface choice");
-  [
-    ["classic", "Classic"],
-    ["beta", "Beta"],
-  ].forEach(([value, label]) => {
-    const btn = el("button", null, label);
-    btn.type = "button";
-    btn.setAttribute("aria-pressed", beta.ui === value ? "true" : "false");
-    btn.addEventListener("click", async () => {
-      if (value === "beta") return;
-      const updated = await call("set_beta", {
-        beta: Object.assign({}, beta, { ui: "classic" }),
+  // The UI selector lists every UI available right now: Classic
+  // always, Beta while opted in, Stage while opted in or once it
+  // graduates (30 days after its stamped beta start).
+  const availableUis =
+    window.KovaUi && window.KovaUi.availableUis
+      ? window.KovaUi.availableUis(beta)
+      : beta.opted_in
+        ? ["classic", "beta"]
+        : ["classic"];
+  if (availableUis.length > 1) {
+    const uiField = el("div", "field");
+    uiField.style.marginTop = "20px";
+    uiField.appendChild(el("label", null, "Interface"));
+    const uiSeg = el("div", "segmented");
+    uiSeg.setAttribute("role", "group");
+    uiSeg.setAttribute("aria-label", "Interface choice");
+    const UI_LABELS = { classic: "Classic", beta: "Beta", third: "Stage" };
+    availableUis.forEach((value) => {
+      const btn = el("button", null, UI_LABELS[value] || value);
+      btn.type = "button";
+      btn.setAttribute("aria-pressed", beta.ui === value ? "true" : "false");
+      btn.addEventListener("click", async () => {
+        if (value === "beta") return;
+        let nextBeta = Object.assign({}, beta, { ui: value });
+        // Picking Stage for the first time stamps its beta start.
+        if (value === "third" && window.KovaUi && window.KovaUi.withStartStamp) {
+          nextBeta = window.KovaUi.withStartStamp(nextBeta, "third");
+        }
+        const updated = await call("set_beta", { beta: nextBeta });
+        if (updated)
+          window.location.href =
+            value === "third" ? "../third/index.html" : "../index.html";
+        else setStatus("Could not switch interfaces.", true);
       });
-      if (updated) window.location.href = "../index.html";
-      else setStatus("Could not switch interfaces.", true);
+      uiSeg.appendChild(btn);
     });
-    uiSeg.appendChild(btn);
-  });
-  uiField.appendChild(uiSeg);
-  betaPanel.appendChild(uiField);
+    uiField.appendChild(uiSeg);
+    betaPanel.appendChild(uiField);
+  }
 
   // Sync.
   const sync = appState.sync || {};

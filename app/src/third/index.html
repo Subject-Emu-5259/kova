@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en" data-accent="cyan" data-density="comfortable">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>KOVA Stage</title>
+<!--
+  KOVA Stage shell — the third UI (working name "Stage"; Dre can
+  rename). Shares the same Tauri commands and kova-state.json as
+  the classic and beta shells. Direction (Dre, 2026-11-14): a
+  blend of Steam + Xbox + PlayStation — a GAMING PLATFORM / GAMING
+  OS, not a generic app. Home is a hero (one big game, full art),
+  dashboard rows around it, an art-first library grid.
+  Controller-first via the shared KovaNav focus system. No sidebar
+  (Classic), no light T-frame (Beta): a top bar, and game art runs
+  the screen. Space Grotesk for display type, Inter for text, both
+  from Google Fonts with system fallbacks — the app may run
+  offline, and the fallback stack keeps the same metrics and look.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+  rel="stylesheet"
+/>
+<link rel="stylesheet" href="third.css" />
+<!-- ui-lifecycle.js loads synchronously before the guard so the
+     guard and this shell's Settings (third.js) can use
+     window.KovaUi. If it failed to load, both fall back to
+     opted-in gating for Stage. -->
+<script src="../ui-lifecycle.js"></script>
+<script>
+  // SHELL GUARD — runs before anything renders. Inside the app,
+  // the Stage shell only shows when the player picked Stage AND
+  // may run it (opted into the beta, or Stage has graduated from
+  // its beta run); otherwise hand back to the classic shell. A
+  // brief flash on switch is acceptable (classic carries the
+  // reverse redirect). Outside the app (no Tauri global — the
+  // design gate) there is nothing to check against, so stay and
+  // render empty states; third.js re-checks at boot as a second
+  // guard.
+  (function () {
+    var tauri = window.__TAURI__ && window.__TAURI__.core;
+    if (!tauri || typeof tauri.invoke !== "function") return;
+    tauri
+      .invoke("get_state")
+      .then(function (state) {
+        var beta = (state && state.beta) || {};
+        var mayRun =
+          window.KovaUi && typeof window.KovaUi.mayRun === "function"
+            ? window.KovaUi.mayRun(beta, "third")
+            : Boolean(beta.opted_in);
+        if (!(beta.ui === "third" && mayRun)) {
+          window.location.replace("../index.html");
+        }
+      })
+      .catch(function () {
+        window.location.replace("../index.html");
+      });
+  })();
+</script>
+<script src="../logo-asset.js" defer></script>
+<script src="../nav.js" defer></script>
+<script src="third.js" defer></script>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <img class="brand-logo" alt="" width="28" height="28" />
+      <span class="wordmark">KOVA</span>
+      <span class="stage-pill">Stage</span>
+    </div>
+    <nav class="nav" aria-label="Sections">
+      <a class="nav-item" href="#/home" data-view="home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <span>Home</span>
+      </a>
+      <a class="nav-item" href="#/library" data-view="library">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5a1 1 0 0 1 1-1h2v16H5a1 1 0 0 1-1-1zm5 0h4v16H9zm6 0h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <span>Library</span>
+      </a>
+      <a class="nav-item" href="#/store" data-view="store">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h16l-1.5 10.5a1 1 0 0 1-1 .5h-11a1 1 0 0 1-1-.5zM8 9V7a4 4 0 0 1 8 0v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <span>Store</span>
+      </a>
+      <a class="nav-item" href="#/profile" data-view="profile">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 20c1.2-3.2 3.8-5 7-5s5.8 1.8 7 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span>Profile</span>
+      </a>
+      <a class="nav-item" href="#/settings" data-view="settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span>Settings</span>
+      </a>
+    </nav>
+    <div class="topbar-search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m16 16 4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input id="global-search" type="search" placeholder="Search your library" aria-label="Search your library" autocomplete="off" />
+    </div>
+    <div class="topbar-right">
+      <button id="topbar-profile" class="profile-chip" type="button" aria-label="Open your profile">
+        <span id="topbar-avatar" class="avatar avatar-sm"><span class="avatar-initial">K</span></span>
+        <span id="topbar-gamertag">Set gamertag</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="canvas">
+    <section id="view-home" class="view" aria-label="Home"></section>
+    <section id="view-library" class="view" hidden aria-label="Library"></section>
+    <section id="view-detail" class="view" hidden aria-label="Game detail"></section>
+    <section id="view-store" class="view" hidden aria-label="Store"></section>
+    <section id="view-profile" class="view" hidden aria-label="Profile"></section>
+    <section id="view-settings" class="view" hidden aria-label="Settings"></section>
+  </main>
+</div>
+
+<nav class="bottombar" aria-label="Sections">
+  <a class="bottombar-item" href="#/home" data-view="home"><span>Home</span></a>
+  <a class="bottombar-item" href="#/library" data-view="library"><span>Library</span></a>
+  <a class="bottombar-item" href="#/store" data-view="store"><span>Store</span></a>
+  <a class="bottombar-item" href="#/profile" data-view="profile"><span>Profile</span></a>
+  <a class="bottombar-item" href="#/settings" data-view="settings"><span>Settings</span></a>
+</nav>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
